@@ -447,7 +447,12 @@ static void MX_RTC_Init(void)
   }
 
   /* USER CODE BEGIN Check_RTC_BKUP */
-
+  /* 仅在首次上电时设置时间; 复位后保持 RTC 时间(备份域由 VBAT 供电, 系统复位不清) */
+  if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) == 0x524E4334u)
+  {
+    return;   /* 已初始化过, 保持当前时间 */
+  }
+  HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR0, 0x524E4334u);
   /* USER CODE END Check_RTC_BKUP */
 
   /** Initialize RTC and set the Time and Date

@@ -16,6 +16,10 @@
 #define SSD1306_CTRL_DATA   0x40u                       /* I2C 控制字节: 数据 */
 #define SSD1306_TIMEOUT_MS  100u
 
+/* ============ 调试统计（读内存确认 OLED 刷新是否成功） ============ */
+volatile uint32_t g_oled_tx_ok   = 0u;
+volatile uint32_t g_oled_tx_fail = 0u;
+
 /* 页寻址页地址命令 */
 #define SSD1306_PAGE_BASE   0xB0u
 
@@ -157,6 +161,7 @@ static void oled_send_cmd(const uint8_t *cmd, uint16_t len)
 {
     uint8_t buf[33u];  /* 1 字节控制 + 最大 32 字节命令 */
     uint16_t i;
+    HAL_StatusTypeDef st;
 
     if (len > 32u || cmd == NULL) return;
     buf[0] = SSD1306_CTRL_CMD;
@@ -165,8 +170,9 @@ static void oled_send_cmd(const uint8_t *cmd, uint16_t len)
         buf[i + 1u] = cmd[i];
     }
     if (mtxI2c != NULL) osMutexAcquire(mtxI2c, osWaitForever);
-    HAL_I2C_Master_Transmit(&hi2c2, SSD1306_I2C_ADDR, buf, len + 1u, SSD1306_TIMEOUT_MS);
+    st = HAL_I2C_Master_Transmit(&hi2c2, SSD1306_I2C_ADDR, buf, len + 1u, SSD1306_TIMEOUT_MS);
     if (mtxI2c != NULL) osMutexRelease(mtxI2c);
+    if (st == HAL_OK) g_oled_tx_ok++; else g_oled_tx_fail++;
 }
 
 /**
@@ -178,6 +184,7 @@ static void oled_send_data(const uint8_t *data, uint16_t len)
 {
     uint8_t buf[OLED_WIDTH + 1u];  /* 1 字节控制 + 最大 128 字节数据 */
     uint16_t i;
+    HAL_StatusTypeDef st;
 
     if (len > OLED_WIDTH || data == NULL) return;
     buf[0] = SSD1306_CTRL_DATA;
@@ -186,8 +193,9 @@ static void oled_send_data(const uint8_t *data, uint16_t len)
         buf[i + 1u] = data[i];
     }
     if (mtxI2c != NULL) osMutexAcquire(mtxI2c, osWaitForever);
-    HAL_I2C_Master_Transmit(&hi2c2, SSD1306_I2C_ADDR, buf, len + 1u, SSD1306_TIMEOUT_MS);
+    st = HAL_I2C_Master_Transmit(&hi2c2, SSD1306_I2C_ADDR, buf, len + 1u, SSD1306_TIMEOUT_MS);
     if (mtxI2c != NULL) osMutexRelease(mtxI2c);
+    if (st == HAL_OK) g_oled_tx_ok++; else g_oled_tx_fail++;
 }
 
 /**
@@ -338,6 +346,54 @@ void BspOled_Puts2x(uint8_t page, uint8_t col, const char *str)
     base_col += 12u;
     str++;
   }
+}
+
+/**
+ * @brief  1.5x 中号字体: 每字符 8 列 x 12 行(跨 1.5 页), 每行最多 16 字符。
+ *         源 5x8 像素映射到 8x12 网格并水平加粗(笔画饱满不稀疏)。
+ * @param  page: 起始页(0~6), 字符从该页顶部开始占 12 行
+ * @param  col:  字符列(0~15)
+ */
+void BspOled_PutsMid(uint8_t page, uint8_t col, const char *str)
+{
+    uint16_t base_col;
+    const uint8_t *font;
+    uint8_t fcol, bit;
+
+    if (str == NULL) return;
+    if (page > 6u) return;
+
+    base_col = (uint16_t)col * 8u;
+
+    while (*str)
+    {
+        if ((*str >= 0x20u) && (*str <= 0x7Fu))
+        {
+            font = s_font5x8[(uint8_t)(*str - 0x20u)];
+            for (fcol = 0u; fcol < 5u; fcol++)
+            {
+                uint8_t v = font[fcol];
+                if (v == 0u) continue;
+                /* 源列 0-4 -> 目标列(水平加粗 2 列, 覆盖 8 列) */
+                uint16_t cL = base_col + (uint16_t)((fcol * 8u) / 5u);  /* 0,1,3,4,6 */
+                if (cL >= OLED_WIDTH) break;
+                for (bit = 0u; bit < 8u; bit++)
+                {
+                    if (((v >> bit) & 0x01u) == 0u) continue;
+                    /* 源行 0-7 -> 目标行 0-11 (分散) */
+                    uint16_t r = (uint16_t)page * 8u + (uint16_t)((bit * 12u) / 8u);
+                    if (r >= OLED_HEIGHT) break;
+                    uint8_t pg = (uint8_t)(r / 8u);
+                    uint8_t db = (uint8_t)(r % 8u);
+                    uint8_t m  = (uint8_t)(1u << db);
+                    if (cL < OLED_WIDTH) s_fb[(uint16_t)pg * OLED_WIDTH + cL] |= m;
+                    if ((cL + 1u) < OLED_WIDTH) s_fb[(uint16_t)pg * OLED_WIDTH + cL + 1u] |= m;
+                }
+            }
+        }
+        base_col += 8u;
+        str++;
+    }
 }
 
 /**

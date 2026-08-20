@@ -29,6 +29,8 @@ static uint8_t g_ui_dirty = 1u;
 static char     s_notice[21] = "";
 static uint32_t s_notice_until = 0u;
 
+volatile uint32_t g_ui_dbg_time = 0u;   /* 调试: UI 最近读到的 RTC 时间 (h<<16|m<<8|s) */
+
 /* TJC 对象名（需与淘晶驰屏工程控件名一致, 需求 §9） */
 #define TJC_OBJ_MODE   "t_mode"
 #define TJC_OBJ_ALERT  "t_alert"
@@ -84,6 +86,7 @@ static void on_tjc_event(const tjc_event_t *evt)
     case 0x0Eu: c.id = CMD_SET_THRESHOLD_LVL;  break;
     case 0x0Fu: c.id = CMD_POMO_ENABLE;        break;
     case 0x10u: c.id = CMD_WAKEUP;             break;
+    case 0x11u: c.id = CMD_SET_RTC_TIME;       break;  /* 校时: p1=时 p2=分 p3=秒 */
     default:    c.id = CMD_NONE;               break;
   }
   if (c.id != CMD_NONE)
@@ -268,20 +271,25 @@ void App_TaskUi(void *arg)
     {
       last_refresh = BSP_GetTick(); g_ui_dirty = 0u;
 
-      uint8_t h, mi, s;
+      uint8_t h, mi, s, yr, mo, dy, wd;
       BspRtc_GetTime(&h, &mi, &s);
+      BspRtc_GetDate(&yr, &mo, &dy, &wd);
+      g_ui_dbg_time = ((uint32_t)h << 16) | ((uint32_t)mi << 8) | s;   /* 调试 */
       char line[21];
       BspOled_Clear();
 
-      /* 大字(2x): 时钟 + 番茄钟(紧贴时钟下面, 分钟显示, 居中) */
-      (void)snprintf(line, sizeof(line), "%02d:%02d:%02d", h, mi, s);
-      BspOled_Puts2x(0u, 1u, line);
+      /* 中号(1.5x): 日期 + 时钟(居中) */
+      (void)snprintf(line, sizeof(line), "%02d/%02d %02d:%02d:%02d", mo, dy, h, mi, s);
+      BspOled_PutsMid(0u, (uint8_t)((16u - (uint8_t)strlen(line)) / 2u), line);
 
       {
-        uint32_t pomo_min = (SvcTimer_PomoRemainSec() + 59u) / 60u;   /* 向上取整到分钟 */
-        int len = (int)snprintf(line, sizeof(line), "Pomo %dmin", (int)pomo_min);
-        uint8_t col = (len >= 10) ? 0u : (uint8_t)((10 - len) / 2u);  /* 2x行最多10字符, 居中 */
-        BspOled_Puts2x(2u, col, line);
+        uint32_t pomo_rem = SvcTimer_PomoRemainSec();
+        int len = (int)snprintf(line, sizeof(line), "Pomo %02d:%02d:%02d",
+                               (int)(pomo_rem / 3600u),
+                               (int)((pomo_rem % 3600u) / 60u),
+                               (int)(pomo_rem % 60u));
+        uint8_t col = (uint8_t)((16 - len) / 2u);   /* 中号每行16字符, 居中 */
+        BspOled_PutsMid(2u, col, line);
       }
 
       /* 小字: 温湿度(~ 渲染为 ° -> ℃) / 光照 */

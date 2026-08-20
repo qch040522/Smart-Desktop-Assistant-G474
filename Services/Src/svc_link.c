@@ -25,6 +25,11 @@ static void mqtt_cmd_to_cmd(uint8_t cmd, const uint8_t *p, uint16_t len)
     case 0x04u: c.id = CMD_LAMP_BRIGHT; c.p1 = (p && len) ? p[0] : 0; break;
     case 0x05u: c.id = CMD_START_CALIB; break;
     case 0x06u: c.id = CMD_WAKEUP; break;
+    case 0x07u: c.id = CMD_SET_RTC_TIME;   /* 校时: p[0]=时 p[1]=分 p[2]=秒 */
+      c.p1 = (p && len > 0u) ? p[0] : 0;
+      c.p2 = (p && len > 1u) ? p[1] : 0;
+      c.p3 = (p && len > 2u) ? p[2] : 0;
+      break;
     default: c.id = CMD_NONE; break;
   }
 

@@ -89,6 +89,11 @@ void App_TaskSensor(void *arg)
   int16_t ax, ay, az;
   uint32_t last_imu = 0u;
 
+  /* 后台初始化 I2C 器件(调度器已启动): BH1750/MPU6050 + 总线扫描, 首次执行一次 */
+  (void)BspBh1750_Init();
+  (void)BspMpu6050_Init();
+  BspI2c_ScanBus();
+
   for (;;)
   {
     Wdg_Heartbeat(WDG_SLOT_SENSOR);

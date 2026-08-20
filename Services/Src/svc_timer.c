@@ -118,6 +118,15 @@ void SvcTimer_PomoSetMin(uint16_t min)
   if (min == 0u) min = 1u;
   s_pomo_total = min;
 }
+
+void SvcTimer_PomoSetSec(uint32_t sec)
+{
+  if (sec == 0u) sec = 1u;
+  s_pomo_total = (uint16_t)((sec + 59u) / 60u);  /* 分钟参考(向上取整) */
+  s_pomo_remain = sec;                            /* 精确剩余秒 */
+  s_pomo = POMO_IDLE;
+}
+
 void SvcTimer_PomoEnable(uint8_t en) { s_pomo_en = en ? 1u : 0u; }
 
 void SvcTimer_PomoStart(void)
@@ -125,7 +134,10 @@ void SvcTimer_PomoStart(void)
   if (s_pomo == POMO_IDLE)
   {
     s_pomo = POMO_RUN;
-    s_pomo_remain = (uint32_t)s_pomo_total * 60u;
+    if (s_pomo_remain == 0u)                       /* 未预设秒数则按整分钟启动 */
+    {
+      s_pomo_remain = (uint32_t)s_pomo_total * 60u;
+    }
   }
   else if (s_pomo == POMO_PAUSE)
   {

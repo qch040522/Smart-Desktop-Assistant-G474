@@ -10,6 +10,7 @@
 #include "svc_link.h"
 #include "app_rtos.h"
 #include "bsp.h"
+#include "bsp_rtc.h"
 
 /* 告警阈值档 (10/15/20/25°) */
 static const uint8_t s_th_lvls[POSTURE_TH_LVL_COUNT] = { 10u, 15u, 20u, 25u };
@@ -255,6 +256,19 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       SvcTimer_ResetTotal();
       request_timing_save();
       break;
+
+    /* ---- 校时（RTC, p1=时 p2=分 p3=秒; 日期保持当前） ---- */
+    case CMD_SET_RTC_TIME:
+    {
+      uint8_t y, mo, d, w, h, mi, s;
+      BspRtc_GetDate(&y, &mo, &d, &w);
+      BspRtc_GetTime(&h, &mi, &s);
+      h  = (uint8_t)(((uint8_t)cmd->p1) % 24u);
+      mi = (uint8_t)(((uint8_t)cmd->p2) % 60u);
+      s  = (uint8_t)(((uint8_t)cmd->p3) % 60u);
+      (void)BspRtc_SetDateTime(y, mo, d, w, h, mi, s);
+      break;
+    }
 
     default:
       break;

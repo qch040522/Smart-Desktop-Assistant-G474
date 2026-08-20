@@ -24,6 +24,10 @@ extern "C" {
 /** 初始化控制器 + 清屏 */
 void BspOled_Init(void);
 
+/* ============ 调试用（调试器 Watch / 读内存可查） ============ */
+extern volatile uint32_t g_oled_tx_ok;   /* OLED I2C 传输成功次数 */
+extern volatile uint32_t g_oled_tx_fail; /* OLED I2C 传输失败次数 */
+
 /** 清除帧缓冲（不立即显示） */
 void BspOled_Clear(void);
 
@@ -37,6 +41,10 @@ void BspOled_Puts(uint8_t row, uint8_t col, const char *str);
  *  page 必须为偶数(0/2/4/6), 字符占 page 与 page+1 两页(16px 高)。
  *  每行最多 10 个字符(128/12)。 */
 void BspOled_Puts2x(uint8_t page, uint8_t col, const char *str);
+
+/** 1.5 倍中号字体绘制(5x8 按 1.5x 放大 -> 8x12/字符, 跨 1.5 页)。
+ *  page 范围 0~6, 每行最多 16 字符(128/8)。介于小字与 2x 大字之间。 */
+void BspOled_PutsMid(uint8_t page, uint8_t col, const char *str);
 
 /** 将帧缓冲整体刷新到屏幕 */
 void BspOled_Flush(void);

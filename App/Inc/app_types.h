@@ -96,6 +96,8 @@ typedef enum {
 
   CMD_WAKEUP,              /* 唤醒(触摸屏/ESP32 任意操作) */
 
+  CMD_SET_RTC_TIME,        /* 校时: p1=时, p2=分, p3=秒(日期保持当前) */
+
   CMD_NUM
 } cmd_id_t;
 

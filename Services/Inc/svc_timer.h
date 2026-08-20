@@ -25,6 +25,7 @@ void     SvcTimer_ResetTotal(void);
 
 /* ---- 番茄钟（仅手动控制） ---- */
 void SvcTimer_PomoSetMin(uint16_t min);
+void SvcTimer_PomoSetSec(uint32_t sec);   /* 精确到秒设置 */
 void SvcTimer_PomoEnable(uint8_t en);
 void SvcTimer_PomoStart(void);
 void SvcTimer_PomoPause(void);
