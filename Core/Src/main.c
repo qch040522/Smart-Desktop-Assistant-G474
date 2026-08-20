@@ -119,6 +119,13 @@ const osThreadAttr_t flashTask_attributes = {
   .priority = (osPriority_t) osPriorityLow1,
   .stack_size = 512 * 4
 };
+/* Definitions for initTask */
+osThreadId_t initTaskHandle;
+const osThreadAttr_t initTask_attributes = {
+  .name = "initTask",
+  .priority = (osPriority_t) osPriorityAboveNormal2,
+  .stack_size = 512 * 4
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -144,6 +151,7 @@ void StartEnvTask(void *argument);
 void StartTimerTask(void *argument);
 void StartUiTask(void *argument);
 void StartFlashTask(void *argument);
+void StartInitTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -243,6 +251,9 @@ int main(void)
 
   /* creation of flashTask */
   flashTaskHandle = osThreadNew(StartFlashTask, NULL, &flashTask_attributes);
+
+  /* creation of initTask: 调度器启动后初始化 I2C 外设(避免调度器前互斥卡死) */
+  initTaskHandle = osThreadNew(StartInitTask, NULL, &initTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -848,6 +859,14 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
+void StartInitTask(void *argument)
+{
+  /* USER CODE BEGIN StartInitTask */
+  App_TaskInit(argument);
+  for(;;){ osDelay(10);}
+  /* USER CODE END StartInitTask */
+}
+
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */

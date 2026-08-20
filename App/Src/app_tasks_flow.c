@@ -95,7 +95,7 @@ static void on_tjc_event(const tjc_event_t *evt)
 void App_UiInit(void)
 {
   BspTjc_Init(on_tjc_event);
-  BspOled_Display(1u);
+  /* BspOled_Display 移到 initTask(调度器启动后执行) */
   g_ui_dirty = 1u;
 }
 

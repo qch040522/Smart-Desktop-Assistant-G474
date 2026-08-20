@@ -93,23 +93,17 @@ void App_Init(void)
   SvcEnv_Init(&g_cfg);
   SvcTimer_Init(NULL);
 
-  /* 5. 初始化 BSP 外设 */
-  BspOled_Init();
+  /* 5. 初始化 BSP 外设(仅非 I2C; I2C 外设移到调度器启动后的 initTask) */
   BspFan_Init();
   BspWs2812_Init();
   BspBuzzer_Init();
   BspLed_Init();
   BspDht11_Init();
-  (void)BspBh1750_Init();
-  (void)BspMpu6050_Init();
   (void)BspRtc_GetYmd();
 
   /* 6. 通讯服务 */
   SvcLink_Init();
   App_UiInit();            /* 负责 TJC/OLED 等界面任务初始化 */
-
-  /* 7. I2C 总线扫描(调试): 判断 OLED/BH1750/MPU6050 是否都在总线上 */
-  BspI2c_ScanBus();
 
   /* 7. 传感器初始 */
   g_sensor.temp_x10 = 0;
@@ -117,4 +111,22 @@ void App_Init(void)
   g_sensor.lux      = 0;
   g_sensor.acc_raw[0] = g_sensor.acc_raw[1] = g_sensor.acc_raw[2] = 0;
   g_sensor.tick_ms  = 0;
+}
+
+/* ==================== initTask: 调度器启动后初始化 I2C 外设 ==================== */
+/**
+ * @brief  在调度器启动后初始化 I2C 外设(OLED/BH1750/MPU6050 + 总线扫描)。
+ *         原因: 调度器启动前(osKernelStart 之前)调用 osMutexAcquire + HAL_I2C,
+ *         在外设无应答时会屏蔽中断并永久卡死(SysTick 停止 → HAL 超时失效)。
+ *         放入 initTask 后, 互斥可正常阻塞, HAL 超时正常工作, 外设故障不再卡死系统。
+ */
+void App_TaskInit(void *arg)
+{
+  (void)arg;
+
+  BspOled_Init();
+  (void)BspBh1750_Init();
+  (void)BspMpu6050_Init();
+  BspOled_Display(1u);
+  BspI2c_ScanBus();        /* 判断 OLED/BH1750/MPU6050 是否在总线上 */
 }

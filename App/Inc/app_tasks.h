@@ -35,6 +35,7 @@ void App_TaskEnv(void *arg);
 void App_TaskTimer(void *arg);
 void App_TaskUi(void *arg);
 void App_TaskFlash(void *arg);
+void App_TaskInit(void *arg);   /* 调度器启动后初始化 I2C 外设 */
 
 /* 每周期 AI 帧存在标志（state/posture 共享, 供状态机判定） */
 extern volatile uint8_t g_frame_any;
