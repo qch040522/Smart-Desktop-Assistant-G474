@@ -1,5 +1,6 @@
 {
     "cmake.cmakePath": "cube-cmake",
+    "cmake.configurePreset": "Debug",
     "cmake.configureArgs": [
         "-DCMAKE_COMMAND=cube-cmake"
     ],

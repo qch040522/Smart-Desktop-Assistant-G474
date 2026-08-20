@@ -45,11 +45,38 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_sys.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_uart_link.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_uart_cb.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_dht11.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_bh1750.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_mpu6050.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_oled.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_tjc.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_led.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_fan.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_buzzer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_rtc.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_flash.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Src/bsp_ws2812.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Src/svc_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Src/svc_state.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Src/svc_posture.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Src/svc_env.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Src/svc_timer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Src/svc_link.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/app_rtos_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/app_tasks_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Src/app_tasks_flow.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    ${CMAKE_CURRENT_SOURCE_DIR}/App/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/BSP/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/Services/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc
 )
 
 # Add project symbols (macros)

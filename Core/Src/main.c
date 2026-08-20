@@ -22,7 +22,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app_rtos.h"
+#include "app_tasks.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -212,6 +213,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+  App_Init();   /* 创建队列/互斥, 初始化 BSP 与各服务 */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -849,11 +851,8 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskDefault(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END 5 */
 }
 
@@ -867,11 +866,8 @@ void StartDefaultTask(void *argument)
 void StartUartTask(void *argument)
 {
   /* USER CODE BEGIN StartUartTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskUart(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartUartTask */
 }
 
@@ -885,11 +881,8 @@ void StartUartTask(void *argument)
 void StartSensorTask(void *argument)
 {
   /* USER CODE BEGIN StartSensorTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskSensor(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartSensorTask */
 }
 
@@ -903,11 +896,8 @@ void StartSensorTask(void *argument)
 void StartStateTask(void *argument)
 {
   /* USER CODE BEGIN StartStateTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskState(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartStateTask */
 }
 
@@ -921,11 +911,8 @@ void StartStateTask(void *argument)
 void StartPostureTask(void *argument)
 {
   /* USER CODE BEGIN StartPostureTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskPosture(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartPostureTask */
 }
 
@@ -939,11 +926,8 @@ void StartPostureTask(void *argument)
 void StartEnvTask(void *argument)
 {
   /* USER CODE BEGIN StartEnvTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskEnv(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartEnvTask */
 }
 
@@ -957,11 +941,8 @@ void StartEnvTask(void *argument)
 void StartTimerTask(void *argument)
 {
   /* USER CODE BEGIN StartTimerTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskTimer(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartTimerTask */
 }
 
@@ -975,11 +956,8 @@ void StartTimerTask(void *argument)
 void StartUiTask(void *argument)
 {
   /* USER CODE BEGIN StartUiTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskUi(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartUiTask */
 }
 
@@ -993,11 +971,8 @@ void StartUiTask(void *argument)
 void StartFlashTask(void *argument)
 {
   /* USER CODE BEGIN StartFlashTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  App_TaskFlash(argument);
+  for(;;){ osDelay(10);}
   /* USER CODE END StartFlashTask */
 }
 

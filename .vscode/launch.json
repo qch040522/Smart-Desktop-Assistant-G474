@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "STM32 Debug (ST-Link)",
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/build/Debug/G474RET6.elf",
+            "deviceName": "G474RE",
+            "serverInterface": "SWD",
+            "serverReset": "Reset",
+            "preLaunchTask": "CMake: Build",
+            "deviceStopWDGOnHalt": true,
+            "openGdbConsole": false
+        }
+    ]
+}
