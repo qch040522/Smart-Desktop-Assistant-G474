@@ -2,10 +2,10 @@
  * @file    bsp_tjc.c
  * @brief   淘晶驰串口屏驱动实现。
  *
- *  自定义事件帧（屏幕工程内用 printh/crcrest/crcputh/crcval 组装发送）:
- *    [0x55][0x0D][cmd][p1_0..p1_3][p2_0..p2_3][p3_0..p3_3][CRC_H][CRC_L][0xAA]
+ *  事件帧（屏幕工程内用 printh/prints 组装发送, USART HMI 指令集版）:
+ *    [0x55][0x0D][cmd][p1_0..p1_3][p2_0..p2_3][p3_0..p3_3][CRC_H][CRC_L]
  *   - 长度字段 = 0x0D (13) = cmd(1字节) + 3×4字节
- *   - CRC16-CCITT(init 0xFFFF, poly 0x1021) 覆盖 [长度字节 .. payload]
+ *   - 屏幕指令集版本不计算 CRC: 末尾 2 字节为占位(0x00 0x00), 本驱动跳过不校验
  */
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +36,16 @@ typedef struct {
 static tjc_rx_t          s_rx;
 static bsp_tjc_evt_cb_t  s_evt_cb;
 
+/* 调试计数器(用 STM32 Programmer 内存读取确认链路):
+ *   g_u5_rx_count  = UART5 收到的字节数(接线/波特率是否通)
+ *   g_tjc_evt_count = 解析成功的事件数(帧格式是否正确)
+ *   g_u5_dbg_buf   = 最近收到的原始字节环形缓冲(直接看屏幕发的内容) */
+volatile uint32_t g_u5_rx_count   = 0u;
+volatile uint32_t g_tjc_evt_count = 0u;
+#define U5_DBG_BUF_LEN 128u
+volatile uint8_t  g_u5_dbg_buf[U5_DBG_BUF_LEN];
+volatile uint16_t g_u5_dbg_idx = 0u;
+
 /* 字节级 CRC16-CCITT 增量（同 esp-link 协议） */
 static void crc_byte16(uint16_t *crc, uint8_t byte)
 {
@@ -60,6 +70,7 @@ static void emit_event(void)
   tjc_event_t evt;
 
   if (s_evt_cb == NULL) return;
+  g_tjc_evt_count++;                        /* 调试: 成功解析一帧事件 */
 
   evt.cmd = s_rx.buf[0];
   evt.p1  = (int32_t)((uint32_t)s_rx.buf[1]  | ((uint32_t)s_rx.buf[2] << 8u) |
@@ -73,6 +84,10 @@ static void emit_event(void)
 
 void BspTjc_RxByte(uint8_t byte)
 {
+  g_u5_rx_count++;                          /* 调试: 每收到一个字节计数 */
+  g_u5_dbg_buf[g_u5_dbg_idx % U5_DBG_BUF_LEN] = byte;   /* 调试: 存原始字节 */
+  g_u5_dbg_idx++;
+
   switch (s_rx.state)
   {
     case TJ_SYNC:
@@ -107,21 +122,13 @@ void BspTjc_RxByte(uint8_t byte)
       break;
 
     case TJ_CRC_H:
-      if ((uint8_t)((s_rx.crc >> 8u) & 0xFFu) == byte)
-      {
-        s_rx.state = TJ_CRC_L;
-      }
-      else
-      {
-        rx_reset();
-      }
+      /* 屏幕为指令集版本(USART HMI 指令集, 非LUA), 不计算 CRC;
+         CRC 两字节为占位符(屏幕发送固定 0x00 0x00), 这里直接跳过不校验 */
+      s_rx.state = TJ_CRC_L;
       break;
 
     case TJ_CRC_L:
-      if ((uint8_t)(s_rx.crc & 0xFFu) == byte)
-      {
-        emit_event();
-      }
+      emit_event();
       rx_reset();
       break;
 
@@ -156,14 +163,16 @@ void BspTjc_JumpPage(const char *page)
 void BspTjc_SetVal(const char *obj, int32_t val)
 {
   char buf[64];
-  (void)snprintf(buf, sizeof(buf), "%s=%ld", obj, (long)val);
+  /* 淘晶驰数值赋值必须带 .val 属性, 如 page0.n0.val=123 */
+  (void)snprintf(buf, sizeof(buf), "%s.val=%ld", obj, (long)val);
   BspTjc_SendRaw(buf);
 }
 
 void BspTjc_SetText(const char *obj, const char *txt)
 {
   char buf[96];
-  (void)snprintf(buf, sizeof(buf), "%s=\"%s\"", obj, (txt != NULL) ? txt : "");
+  /* 淘晶驰文本赋值必须带 .txt 属性, 如 page0.t0.txt="abc" */
+  (void)snprintf(buf, sizeof(buf), "%s.txt=\"%s\"", obj, (txt != NULL) ? txt : "");
   BspTjc_SendRaw(buf);
 }
 

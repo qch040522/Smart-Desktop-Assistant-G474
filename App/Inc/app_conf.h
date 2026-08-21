@@ -43,7 +43,7 @@ extern "C" {
 #define FAN_PWM_PERIOD               8500u   /* TIM4 计数周期, 0% ~ 100% = 0~8500 */
 #define FAN_LEVELS                   8u      /* 风扇手动档 (0=关) */
 
-#define LAMP_PWM_MAX                 255u    /* WS2812 单色蓝亮度 0~255 */
+#define LAMP_PWM_MAX                 255u    /* WS2812 白光亮度 0~255 */
 #define LAMP_ADJUST_STEP             16u     /* 自动亮度步进，防闪烁 */
 
 /* 台灯自动亮度策略 */
@@ -52,6 +52,7 @@ extern "C" {
 
 /* =========================== 计时参数 =========================== */
 #define POMO_DEFAULT_MINUTES        25u
+#define POMO_MAX_MINUTES            1000u  /* 番茄钟时长上限(1000分钟), 超限按0处理(关闭) */
 #define ALARM_RING_MS               30000u  /* 闹钟到场响铃最长 30s */
 
 /* =========================== 存储参数 =========================== */

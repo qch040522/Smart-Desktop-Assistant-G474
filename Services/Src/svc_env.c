@@ -3,7 +3,7 @@
  * @brief   环境控制实现。
  *
  *  风扇自动: 温度越高档位越大 (0~100%). 以温度为主、湿度微调。
- *  台灯自动: 光照越低蓝光越亮 (0~255)。
+ *  台灯自动: 开关式——光照低于阈值全亮, 高于阈值灭。
  *  休眠: 两者关闭。
  */
 #include <stddef.h>
@@ -17,7 +17,8 @@ static uint16_t    s_lamp_bright;
 
 /* 上次实际下发值（用于变化检测, 避免周期性重复发送） */
 static uint8_t  s_last_fan  = 0xFFu;
-static uint8_t  s_last_lamp = 0xFFu;
+static uint8_t  s_last_lamp = 0u;
+static uint8_t  s_lamp_sent = 0u;   /* 台灯是否已下发过(亮度可达255=0xFF, 不能用0xFF做哨兵) */
 
 static uint8_t map_temp_to_level(int16_t temp_x10)
 {
@@ -34,12 +35,9 @@ static uint8_t map_temp_to_level(int16_t temp_x10)
 
 static uint16_t lux_to_bright(uint16_t lux)
 {
-  if (lux <= LUX_DARK)    return LAMP_PWM_MAX;
-  if (lux >= LUX_BRIGHT)  return 0u;
-  /* LUX_DARK~LUX_BRIGHT lux 线性 */
-  return (uint16_t)(LAMP_PWM_MAX -
-                    ((uint32_t)(lux - LUX_DARK) * LAMP_PWM_MAX) /
-                    (LUX_BRIGHT - LUX_DARK));
+  /* 开关式: 光照低于 200lux -> 全亮; 否则灭 (无阶梯) */
+  if (lux < 200u)  return LAMP_PWM_MAX;
+  return 0u;
 }
 
 void SvcEnv_Init(app_config_t *cfg)
@@ -60,30 +58,36 @@ static void apply_fan(uint8_t pct)
 
 static void apply_lamp(uint8_t bright)
 {
-  if (bright != s_last_lamp)
+  if ((s_lamp_sent == 0u) || (bright != s_last_lamp))
   {
-    BspWs2812_SetBlue(bright);
+    BspWs2812_SetBright(bright);
     s_last_lamp = bright;
+    s_lamp_sent = 1u;
   }
 }
 
-void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg)
+void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg,
+                   occupy_state_t occ)
 {
   (void)cfg;
+  (void)occ;   /* 环境控制不看摄像头/无人状态: 自动挡直接按传感器控制 */
 
-  if (mode == SYS_MODE_SLEEP)
+  if (mode == SYS_MODE_SLEEP)      /* 手动切入休眠: 强制关闭 */
   {
     apply_fan(0u);
     apply_lamp(0u);
     return;
   }
 
-  if (s_ctrl_mode == CTRL_MODE_MANUAL)
+  if (s_ctrl_mode == CTRL_MODE_MANUAL)  /* 手动控制: 完全手动, 无人也不关 */
   {
     apply_fan((uint8_t)((uint32_t)s_fan_level * 100u / (FAN_LEVELS - 1u)));
     apply_lamp((uint8_t)s_lamp_bright);
+    return;
   }
-  else if (sen != NULL)
+
+  /* 自动模式: 直接按传感器自动控制(不看摄像头/无人状态) */
+  if (sen != NULL)
   {
     uint8_t lvl = map_temp_to_level(sen->temp_x10);
     apply_fan((uint8_t)((uint32_t)lvl * 100u / (FAN_LEVELS - 1u)));

@@ -1,6 +1,6 @@
 /**
  * @file    svc_env.h
- * @brief   环境控制服务：风扇(温湿度→PWM)、台灯(光照→蓝色亮度)。
+ * @brief   环境控制服务：风扇(温湿度→PWM)、台灯(光照→白光亮度)。
  *          手动优先 = 手动持久，直到用户切回自动。
  */
 #ifndef SVC_ENV_H
@@ -19,10 +19,12 @@ void SvcEnv_Init(app_config_t *cfg);
  * 周期性计算并应用风扇/台灯目标（由 env 任务每 ~1s 调用）。
  *
  * @param sen   传感器(温湿度/光照)
- * @param mode  当前业务模式（休眠时关闭）
+ * @param mode  当前业务模式（手动切入休眠时强制关闭）
  * @param cfg   配置(读手动/自动)
+ * @param occ   有人/无人状态（当前环境控制不使用, 保留接口）
  */
-void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg);
+void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg,
+                   occupy_state_t occ);
 
 /** 查询当前应输出（供 0x12 / UI 汇总） */
 uint8_t  SvcEnv_FanLevel(void);

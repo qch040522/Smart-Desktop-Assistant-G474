@@ -31,12 +31,14 @@ static uint32_t s_notice_until = 0u;
 
 volatile uint32_t g_ui_dbg_time = 0u;   /* 调试: UI 最近读到的 RTC 时间 (h<<16|m<<8|s) */
 
-/* TJC 对象名（需与淘晶驰屏工程控件名一致, 需求 §9） */
-#define TJC_OBJ_MODE   "t_mode"
-#define TJC_OBJ_ALERT  "t_alert"
-#define TJC_OBJ_POMO   "t_pomo"
-#define TJC_OBJ_TODAY  "t_today"
-#define TJC_OBJ_TOTAL  "t_total"
+/* TJC 对象名（淘晶驰指令集不支持下划线, 全部用字母数字短名; 两页都推番茄钟） */
+#define TJC_OBJ_ALERT      "page_auto.talert"
+#define TJC_OBJ_POMO       "page_auto.tpomo"
+#define TJC_OBJ_POMO_MAN   "page_manual.tpomo2"
+#define TJC_OBJ_TODAY      "page_auto.ttoday"
+#define TJC_OBJ_TOTAL      "page_auto.ttotal"
+#define TJC_OBJ_ALARM      "page_auto.talarm"
+#define TJC_OBJ_ALARM_REP  "page_auto.trep"
 
 static void ui_put(ui_msg_t m)
 {
@@ -50,6 +52,25 @@ static void request_timing_save(void)
   if (qFlash != NULL)
   {
     osMessageQueuePut(qFlash, &req, 0u, 0u);
+  }
+}
+
+/* 秒 -> "HH:MM:SS" */
+static void tjc_hms(char *buf, size_t n, uint32_t sec)
+{
+  (void)snprintf(buf, n, "%02lu:%02lu:%02lu",
+                 (unsigned long)(sec / 3600u),
+                 (unsigned long)((sec % 3600u) / 60u),
+                 (unsigned long)(sec % 60u));
+}
+
+static const char *tjc_alarm_rep_txt(void)
+{
+  switch (SvcTimer_AlarmRepeat())
+  {
+    case ALARM_REPEAT_ONCE:   return "ONCE";
+    case ALARM_REPEAT_WEEKLY: return "WEEKLY";
+    default:                  return "DAILY";
   }
 }
 
@@ -87,6 +108,7 @@ static void on_tjc_event(const tjc_event_t *evt)
     case 0x0Fu: c.id = CMD_POMO_ENABLE;        break;
     case 0x10u: c.id = CMD_WAKEUP;             break;
     case 0x11u: c.id = CMD_SET_RTC_TIME;       break;  /* 校时: p1=时 p2=分 p3=秒 */
+    case 0x12u: c.id = CMD_ALARM_WEEKDAY;      break;  /* 闹钟星期: p1=1(周一)~7(周日) */
     default:    c.id = CMD_NONE;               break;
   }
   if (c.id != CMD_NONE)
@@ -233,7 +255,7 @@ void App_TaskUi(void *arg)
       switch (m.id)
       {
         case UE_MODE_CHANGED:
-          BspTjc_SetVal(TJC_OBJ_MODE, m.a);
+          /* 模式变化: 由 OLED 状态行/屏幕告警体现, 屏幕不单独显示 */
           break;
         case UE_POSTURE_ALARM:
           (void)snprintf(s_notice, sizeof(s_notice), "POSTURE!");
@@ -316,10 +338,25 @@ void App_TaskUi(void *arg)
 
       BspOled_Flush();
 
-      /* 周期推送关键状态到串口屏（需求 §9 显示时长/番茄钟） */
-      BspTjc_SetVal(TJC_OBJ_POMO,  (int32_t)SvcTimer_PomoRemainSec());
-      BspTjc_SetVal(TJC_OBJ_TODAY, (int32_t)SvcTimer_TodaySec());
-      BspTjc_SetVal(TJC_OBJ_TOTAL, (int32_t)SvcTimer_TotalSec());
+      /* 周期推送关键状态到串口屏（page_auto, 需求 §9: 时分秒显示） */
+      {
+        char tbuf[24];
+
+        tjc_hms(tbuf, sizeof(tbuf), SvcTimer_PomoRemainSec());
+        BspTjc_SetText(TJC_OBJ_POMO, tbuf);      /* 自动页显示番茄钟 */
+        BspTjc_SetText(TJC_OBJ_POMO_MAN, tbuf);   /* 手动页同步显示番茄钟 */
+
+        tjc_hms(tbuf, sizeof(tbuf), SvcTimer_TodaySec());
+        BspTjc_SetText(TJC_OBJ_TODAY, tbuf);
+
+        tjc_hms(tbuf, sizeof(tbuf), SvcTimer_TotalSec());
+        BspTjc_SetText(TJC_OBJ_TOTAL, tbuf);
+
+        (void)snprintf(tbuf, sizeof(tbuf), "%02d:%02d",
+                       (int)SvcTimer_AlarmHour(), (int)SvcTimer_AlarmMin());
+        BspTjc_SetText(TJC_OBJ_ALARM, tbuf);
+        BspTjc_SetText(TJC_OBJ_ALARM_REP, tjc_alarm_rep_txt());
+      }
     }
     osDelay(200u);
   }

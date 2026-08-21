@@ -175,7 +175,7 @@ void App_TaskEnv(void *arg)
     osMutexAcquire(mtxSensor, 0u);
     sen = g_sensor;                  /* 拷贝共享传感器数据 */
     osMutexRelease(mtxSensor);
-    SvcEnv_Update(&sen, SvcState_Mode(), &g_cfg);
+    SvcEnv_Update(&sen, SvcState_Mode(), &g_cfg, SvcState_Occupy());
     g_status.fan_level       = SvcEnv_FanLevel();
     g_status.lamp_brightness = (uint16_t)SvcEnv_LampBrightness();
     g_status.ctrl_mode       = SvcEnv_CtrlMode();

@@ -60,7 +60,7 @@ static void fill_frame(uint8_t g, uint8_t r, uint8_t b)
   }
 }
 
-void BspWs2812_SetBlue(uint8_t brightness)
+void BspWs2812_SetBright(uint8_t brightness)
 {
   uint32_t t0 = HAL_GetTick();
 
@@ -73,7 +73,8 @@ void BspWs2812_SetBlue(uint8_t brightness)
     }
   }
 
-  fill_frame(0u, 0u, brightness);
+  /* 白光: G=R=B=亮度 */
+  fill_frame(brightness, brightness, brightness);
 
   s_ws_tx_busy = 1u;
   if (HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_2, (uint32_t *)s_buf,
@@ -85,5 +86,5 @@ void BspWs2812_SetBlue(uint8_t brightness)
 
 void BspWs2812_Off(void)
 {
-  BspWs2812_SetBlue(0u);
+  BspWs2812_SetBright(0u);
 }

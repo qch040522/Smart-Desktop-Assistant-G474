@@ -6,6 +6,7 @@
 #include "bsp.h"
 #include "bsp_flash.h"
 #include "svc_config.h"
+#include "svc_timer.h"
 
 /* 末扇区偏移 = 总Flash大小(512KB) - 扇区大小(2KB) */
 #define CFG_SECT_ADDR    FLASH_USER_SECTOR_ADDR
@@ -23,6 +24,8 @@ void SvcConfig_SetDefaults(app_config_t *cfg)
   cfg->alarm_hour      = 7u;
   cfg->alarm_min       = 0u;
   cfg->alarm_en        = 0u;
+  cfg->alarm_repeat    = ALARM_REPEAT_DAILY;   /* 默认每日 */
+  cfg->alarm_weekday   = 1u;                   /* 1=周一 */
   cfg->pomodoro_min    = (uint16_t)POMO_DEFAULT_MINUTES;
   cfg->pomodo_en       = 0u;
   cfg->fan_level       = 4u;

@@ -20,6 +20,8 @@ static pomo_state_e s_pomo = POMO_IDLE;
 static uint32_t s_pomo_remain = 0u;
 
 static uint8_t  s_alarm_hh = 7u, s_alarm_mm = 0u, s_alarm_en = 0u;
+static uint8_t  s_alarm_repeat = ALARM_REPEAT_DAILY;  /* 默认每日 */
+static uint8_t  s_alarm_weekday = 1u;                 /* 1=周一..7=周日 */
 static uint8_t  s_alarm_ringing = 0u;
 static uint32_t s_ring_start_ms = 0u;
 
@@ -44,6 +46,16 @@ void SvcTimer_Init(const app_timing_snapshot_t *snap)
     s_today_sec = 0u;
     s_last_ymd  = BspRtc_GetYmd();
   }
+}
+
+/* 按重复类型判断今天是否该响 */
+static int alarm_day_match(void)
+{
+  uint8_t y, mo, d, w;
+
+  if (s_alarm_repeat != ALARM_REPEAT_WEEKLY) return 1;  /* 响一次/每日 */
+  BspRtc_GetDate(&y, &mo, &d, &w);
+  return (w == s_alarm_weekday);                        /* 每周几匹配 */
 }
 
 void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
@@ -84,12 +96,12 @@ void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
     s_pomo = POMO_IDLE;
   }
 
-  /* 闹钟: 检查时分匹配 */
+  /* 闹钟: 检查时分匹配(按重复类型: 响一次/每日/每周几) */
   if (s_alarm_en && !s_alarm_ringing)
   {
     uint8_t h, m, s;
     BspRtc_GetTime(&h, &m, &s);
-    if ((h == s_alarm_hh) && (m == s_alarm_mm) && (s < 5u))
+    if ((h == s_alarm_hh) && (m == s_alarm_mm) && (s < 5u) && alarm_day_match())
     {
       s_alarm_ringing = 1u;
       s_ring_start_ms = now_ms;
@@ -102,6 +114,10 @@ void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
     {
       s_alarm_ringing = 0u;
       BspBuzzer_BeepOff();
+      if (s_alarm_repeat == ALARM_REPEAT_ONCE)
+      {
+        s_alarm_en = 0u;      /* 响一次: 到点响完自动关闭使能 */
+      }
     }
   }
 }
@@ -115,8 +131,13 @@ void SvcTimer_ResetTotal(void)   { s_total_sec = 0u; }
 /* ---- 番茄钟 ---- */
 void SvcTimer_PomoSetMin(uint16_t min)
 {
-  if (min == 0u) min = 1u;
-  s_pomo_total = min;
+  if (min > POMO_MAX_MINUTES) min = 0u;  /* 超限(>1000)按0处理: 关闭番茄钟 */
+  s_pomo_total = min;              /* 0 = 关闭番茄钟(开始无效, 见 PomoStart) */
+  if (min == 0u)
+  {
+    s_pomo = POMO_IDLE;            /* 关闭: 停止当前计时并清空剩余 */
+    s_pomo_remain = 0u;
+  }
 }
 
 void SvcTimer_PomoSetSec(uint32_t sec)
@@ -131,6 +152,7 @@ void SvcTimer_PomoEnable(uint8_t en) { s_pomo_en = en ? 1u : 0u; }
 
 void SvcTimer_PomoStart(void)
 {
+  if (s_pomo_total == 0u) return;  /* 番茄钟已关闭(时长0): 开始无效 */
   if (s_pomo == POMO_IDLE)
   {
     s_pomo = POMO_RUN;
@@ -160,10 +182,16 @@ uint8_t  SvcTimer_PomoState(void)      { return (uint8_t)s_pomo; }
 uint32_t SvcTimer_PomoRemainSec(void)  { return s_pomo_remain; }
 
 /* ---- 闹钟 ---- */
-void SvcTimer_AlarmSet(uint8_t h, uint8_t m)
+void SvcTimer_AlarmSet(uint8_t h, uint8_t m, uint8_t repeat)
 {
   s_alarm_hh = h;
   s_alarm_mm = m;
+  if (repeat > ALARM_REPEAT_WEEKLY) repeat = ALARM_REPEAT_DAILY;
+  s_alarm_repeat = repeat;
+}
+void SvcTimer_AlarmSetWeekday(uint8_t wd)
+{
+  if ((wd >= 1u) && (wd <= 7u)) s_alarm_weekday = wd;
 }
 void SvcTimer_AlarmEnable(uint8_t en)
 {
@@ -177,12 +205,15 @@ void SvcTimer_AlarmEnable(uint8_t en)
 void SvcTimer_AlarmAck(void)
 {
   s_alarm_ringing = 0u;
+  if (s_alarm_repeat == ALARM_REPEAT_ONCE) s_alarm_en = 0u;  /* 响一次停后关闭 */
   BspBuzzer_BeepOff();
 }
 uint8_t SvcTimer_AlarmRinging(void) { return s_alarm_ringing; }
 uint8_t SvcTimer_AlarmEnabled(void) { return s_alarm_en; }
 uint8_t SvcTimer_AlarmHour(void)    { return s_alarm_hh; }
 uint8_t SvcTimer_AlarmMin(void)     { return s_alarm_mm; }
+uint8_t SvcTimer_AlarmRepeat(void)  { return s_alarm_repeat; }
+uint8_t SvcTimer_AlarmWeekday(void) { return s_alarm_weekday; }
 
 void SvcTimer_BuildSnapshot(app_timing_snapshot_t *snap)
 {

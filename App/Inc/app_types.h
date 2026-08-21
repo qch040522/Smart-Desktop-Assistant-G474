@@ -88,7 +88,8 @@ typedef enum {
   CMD_POMO_PAUSE,
   CMD_POMO_RESET,
 
-  CMD_ALARM_SET,           /* p1=时, p2=分 */
+  CMD_ALARM_SET,           /* p1=时, p2=分, p3=重复类型(0一次/1每日/2每周几) */
+  CMD_ALARM_WEEKDAY,       /* p1=星期(1=周一..7=周日) */
   CMD_ALARM_ENABLE,        /* p1=0/1 */
   CMD_ALARM_RESET,
 
@@ -144,6 +145,8 @@ typedef struct {
   uint8_t  alarm_hour;
   uint8_t  alarm_min;
   uint8_t  alarm_en;
+  uint8_t  alarm_repeat;    /* 0=响一次 1=每日 2=每周几 */
+  uint8_t  alarm_weekday;   /* 每周几: 1=周一..7=周日 */
   uint16_t pomodoro_min;
   uint8_t  pomodo_en;
   uint8_t  fan_level;         /* 手动档记忆 */

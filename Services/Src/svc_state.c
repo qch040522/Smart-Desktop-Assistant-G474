@@ -67,6 +67,7 @@ void SvcState_Tick(uint32_t now_ms, uint8_t any_frame, uint8_t valid_frame)
     s_occupy = OCCUPY_HUMAN;
   }
 
+#if 0   /* 临时测试(串口屏调试): 禁用无人自动休眠, 便于手动控制风扇/灯 */
   /* 若处于业务模式且无人 -> 进入业务休眠; 有人 -> 唤醒 */
   if (s_mode != SYS_MODE_SLEEP)
   {
@@ -84,6 +85,7 @@ void SvcState_Tick(uint32_t now_ms, uint8_t any_frame, uint8_t valid_frame)
       s_mode = SYS_MODE_LEISURE;
     }
   }
+#endif
 }
 
 sys_mode_t    SvcState_Mode(void)   { return s_mode; }
@@ -213,9 +215,11 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
 
     case CMD_POMO_SET_MIN:
       {
-        uint16_t min = ((uint16_t)cmd->p1 == 0u) ? 1u : (uint16_t)cmd->p1;
-        SvcTimer_PomoSetMin(min);
-        cfg->pomodoro_min = min;
+        int32_t min = cmd->p1;
+        if (min < 0)               min = 0;                              /* 负数按0处理(关闭番茄钟) */
+        if (min > POMO_MAX_MINUTES) min = 0;                             /* 超限(>1000) -> 关闭番茄钟 */
+        SvcTimer_PomoSetMin((uint16_t)min);
+        cfg->pomodoro_min = (uint16_t)min;
         request_config_save();
       }
       break;
@@ -227,11 +231,25 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
     /* ---- 闹钟（全模式生效, 需求 §七） ---- */
     case CMD_ALARM_SET:
       {
-        uint8_t hh = (uint8_t)(((uint8_t)cmd->p1) % 24u);
-        uint8_t mm = (uint8_t)(((uint8_t)cmd->p2) % 60u);
-        SvcTimer_AlarmSet(hh, mm);
-        cfg->alarm_hour = hh;
-        cfg->alarm_min  = mm;
+        uint8_t hh = (uint8_t)cmd->p1;
+        uint8_t mm = (uint8_t)cmd->p2;
+        uint8_t rep = (uint8_t)cmd->p3;              /* 0一次/1每日/2每周几 */
+        if (hh > 23u) hh = 0u;                        /* 非法时/分 -> 归零(如25点->00点) */
+        if (mm > 59u) mm = 0u;
+        if (rep > ALARM_REPEAT_WEEKLY) rep = ALARM_REPEAT_DAILY;
+        SvcTimer_AlarmSet(hh, mm, rep);
+        cfg->alarm_hour   = hh;
+        cfg->alarm_min    = mm;
+        cfg->alarm_repeat = rep;
+        request_config_save();
+      }
+      break;
+
+    case CMD_ALARM_WEEKDAY:
+      if (((uint8_t)cmd->p1 >= 1u) && ((uint8_t)cmd->p1 <= 7u))
+      {
+        SvcTimer_AlarmSetWeekday((uint8_t)cmd->p1);
+        cfg->alarm_weekday = (uint8_t)cmd->p1;
         request_config_save();
       }
       break;
@@ -243,11 +261,13 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       break;
 
     case CMD_ALARM_RESET:
-      SvcTimer_AlarmSet(0u, 0u);
+      SvcTimer_AlarmSet(0u, 0u, ALARM_REPEAT_ONCE);
       SvcTimer_AlarmEnable(0u);
-      cfg->alarm_hour = 0u;
-      cfg->alarm_min  = 0u;
-      cfg->alarm_en   = 0u;
+      cfg->alarm_hour    = 0u;
+      cfg->alarm_min     = 0u;
+      cfg->alarm_en      = 0u;
+      cfg->alarm_repeat  = ALARM_REPEAT_ONCE;
+      cfg->alarm_weekday = 1u;
       request_config_save();
       break;
 

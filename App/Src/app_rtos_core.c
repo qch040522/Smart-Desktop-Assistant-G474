@@ -92,6 +92,7 @@ void App_Init(void)
   SvcPosture_Init(g_cfg.angle_base);
   SvcEnv_Init(&g_cfg);
   SvcTimer_Init(NULL);
+  SvcTimer_PomoSetMin(g_cfg.pomodoro_min);   /* 重启后恢复番茄钟时长(Flash配置) */
 
   /* 5. 初始化 BSP 外设(仅非 I2C; I2C 外设移到调度器启动后的 initTask) */
   BspFan_Init();
