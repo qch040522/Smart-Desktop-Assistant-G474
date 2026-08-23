@@ -69,7 +69,12 @@ void BspWs2812_SetBright(uint8_t brightness)
   {
     if ((HAL_GetTick() - t0) > 100u)
     {
-      return;   /* 上次发送仍未完成(异常), 放弃本次更新, 等待下次重试 */
+      /* 上次 DMA 卡死(掉压/中断丢失等): 强制复位TIM+DMA并清忙标志,
+         否则后续所有更新都会在此超时返回, 灯错乱后永远无法恢复 */
+      HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_2);
+      __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0u);
+      s_ws_tx_busy = 0u;
+      return;
     }
   }
 

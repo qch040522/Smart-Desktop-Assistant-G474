@@ -51,8 +51,9 @@ extern "C" {
 #define LUX_BRIGHT                  400u    /* >= 此值亮度 0 */
 
 /* =========================== 计时参数 =========================== */
-#define POMO_DEFAULT_MINUTES        25u
+#define POMO_DEFAULT_MINUTES        0u   /* 番茄钟默认时长: 0=关闭 */
 #define POMO_MAX_MINUTES            1000u  /* 番茄钟时长上限(1000分钟), 超限按0处理(关闭) */
+#define POMO_RING_MS                10000u  /* 番茄钟到点蜂鸣提示 10s(自动停) */
 #define ALARM_RING_MS               30000u  /* 闹钟到场响铃最长 30s */
 
 /* =========================== 存储参数 =========================== */

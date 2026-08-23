@@ -34,5 +34,6 @@ void BspBuzzer_BeepOn(uint16_t freq_hz)
 
 void BspBuzzer_BeepOff(void)
 {
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0u);
+  /* 低电平触发蜂鸣器: 不响时输出高电平(CCR=ARR -> 100%占空比, 恒定高) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, __HAL_TIM_GET_AUTORELOAD(&htim3));
 }

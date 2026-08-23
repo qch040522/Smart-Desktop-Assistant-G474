@@ -17,7 +17,6 @@
 #include "bsp_oled.h"
 #include "bsp_fan.h"
 #include "bsp_ws2812.h"
-#include "bsp_buzzer.h"
 #include "bsp_led.h"
 #include "bsp_dht11.h"
 #include "bsp_bh1750.h"
@@ -32,22 +31,13 @@ static int32_t s_grav_base = 0;
 static uint32_t s_motion_invalid_ms = 0;
 
 /* ================================================================ */
-/*  defaultTask: 看门狗监护 + 喂 IWDG                               */
+/*  defaultTask: 喂 IWDG（看门狗超时不再触发蜂鸣器）               */
 /* ================================================================ */
 void App_TaskDefault(void *arg)
 {
   (void)arg;
-  uint8_t i;
   for (;;)
   {
-    for (i = 0u; i < WDG_SLOTS; i++)
-    {
-      uint32_t last = Wdg_GetLastBeat(i);
-      if ((last != 0u) && ((HAL_GetTick() - last) > WDG_TIMEOUT_MS))
-      {
-        BspBuzzer_BeepOn(3300u);          /* 看门狗超时报警 */
-      }
-    }
     BSP_IwdgFeed();
     osDelay(1000u);
   }

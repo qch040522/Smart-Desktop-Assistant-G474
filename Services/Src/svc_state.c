@@ -12,6 +12,10 @@
 #include "bsp.h"
 #include "bsp_rtc.h"
 
+/* ---- 调试: 记录最近台灯命令的原始 p1(排查异常255来源), 用 STM32 Programmer 读 ---- */
+volatile int32_t  g_lamp_cmd_hist[16];
+volatile uint16_t g_lamp_cmd_idx = 0u;
+
 /* 告警阈值档 (10/15/20/25°) */
 static const uint8_t s_th_lvls[POSTURE_TH_LVL_COUNT] = { 10u, 15u, 20u, 25u };
 
@@ -160,8 +164,8 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       }
       break;
 
-    /* ---- 环境控制（需求 §六 手动优先=手动持久） ---- */
-    case CMD_SET_CTRL_MODE:
+    /* ---- 环境控制: 0x02 切页面; 0x03/0x04 设设备(自动挡/手动挡) ---- */
+    case CMD_SET_CTRL_MODE:   /* 页面切换: 0自动监测页/1手动控制页 */
       if ((cmd->p1 == CTRL_MODE_AUTO) || (cmd->p1 == CTRL_MODE_MANUAL))
       {
         SvcEnv_SetCtrlMode((ctrl_mode_t)cmd->p1);
@@ -171,31 +175,32 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       break;
 
     case CMD_FAN_LEVEL:
+      /* 设备按钮只存在于手动控制页: 收到即隐式切回手动页模式(兜底, 屏幕切页0x02未配时也能用) */
+      SvcEnv_SetCtrlMode(CTRL_MODE_MANUAL);
       if (cmd->p1 < 0)
       {
-        SvcEnv_SetCtrlMode(CTRL_MODE_AUTO);
-        cfg->ctrl_mode = CTRL_MODE_AUTO;
+        SvcEnv_SetFanAuto();    /* 手动页风扇自动挡: 按温度 */
       }
       else if ((uint8_t)cmd->p1 < FAN_LEVELS)
       {
         SvcEnv_SetFanManual((uint8_t)cmd->p1);
         cfg->fan_level = (uint8_t)cmd->p1;
-        cfg->ctrl_mode = CTRL_MODE_MANUAL;
       }
       request_config_save();
       break;
 
     case CMD_LAMP_BRIGHT:
+      g_lamp_cmd_hist[g_lamp_cmd_idx % 16u] = cmd->p1;   /* 调试: 记录原始p1 */
+      g_lamp_cmd_idx++;
+      SvcEnv_SetCtrlMode(CTRL_MODE_MANUAL);   /* 同上: 设备按钮=手动页 */
       if (cmd->p1 < 0)
       {
-        SvcEnv_SetCtrlMode(CTRL_MODE_AUTO);
-        cfg->ctrl_mode = CTRL_MODE_AUTO;
+        SvcEnv_SetLampAuto();   /* 手动页台灯自动挡: 按光照 */
       }
       else if ((uint8_t)cmd->p1 <= LAMP_PWM_MAX)
       {
         SvcEnv_SetLampManual((uint8_t)cmd->p1);
         cfg->lamp_brightness = (uint8_t)cmd->p1;
-        cfg->ctrl_mode = CTRL_MODE_MANUAL;
       }
       request_config_save();
       break;
@@ -220,6 +225,18 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
         if (min > POMO_MAX_MINUTES) min = 0;                             /* 超限(>1000) -> 关闭番茄钟 */
         SvcTimer_PomoSetMin((uint16_t)min);
         cfg->pomodoro_min = (uint16_t)min;
+        if (min > 0)
+        {
+          /* 设置时长即视为要使用番茄钟: 自动打开开关(与UI状态同步), 可直接开始 */
+          SvcTimer_PomoEnable(1u);
+          cfg->pomodo_en = 1u;
+        }
+        else
+        {
+          /* 时长设0=关闭番茄钟: 同步关闭开关 */
+          SvcTimer_PomoEnable(0u);
+          cfg->pomodo_en = 0u;
+        }
         request_config_save();
       }
       break;

@@ -151,6 +151,8 @@ typedef struct {
   uint8_t  pomodo_en;
   uint8_t  fan_level;         /* 手动档记忆 */
   uint8_t  lamp_brightness;   /* 手动亮度记忆 */
+  uint8_t  reserved;          /* 对齐保留(固定0xFF, 参与CRC) */
+  uint16_t crc;               /* CRC16-CCITT(0xFFFF/0x1021): 覆盖 crc 之前全部字节, 防断电损坏 */
 } app_config_t;
 
 /** 时长快照（退出学习模式 / 跨天 时写 Flash 102） */

@@ -19,11 +19,12 @@ static uint8_t  s_pomo_en = 1u;
 static pomo_state_e s_pomo = POMO_IDLE;
 static uint32_t s_pomo_remain = 0u;
 
-static uint8_t  s_alarm_hh = 7u, s_alarm_mm = 0u, s_alarm_en = 0u;
+static uint8_t  s_alarm_hh = 0u, s_alarm_mm = 0u, s_alarm_en = 0u;   /* 默认 0:00 */
 static uint8_t  s_alarm_repeat = ALARM_REPEAT_DAILY;  /* 默认每日 */
 static uint8_t  s_alarm_weekday = 1u;                 /* 1=周一..7=周日 */
 static uint8_t  s_alarm_ringing = 0u;
 static uint32_t s_ring_start_ms = 0u;
+static uint32_t s_pomo_ring_start_ms = 0u;            /* 番茄钟响铃起始(ms), 0=未响铃 */
 
 void SvcTimer_Init(const app_timing_snapshot_t *snap)
 {
@@ -85,8 +86,9 @@ void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
     s_pomo_remain--;
     if (s_pomo_remain == 0u)
     {
-      /* 到点: 蜂鸣提示 3 秒 */
+      /* 到点: 蜂鸣提示 3 秒后自动停 */
       s_pomo = POMO_IDLE;
+      s_pomo_ring_start_ms = now_ms;
       BspBuzzer_BeepOn(4000u);
     }
   }
@@ -94,6 +96,14 @@ void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
   {
     /* 已结束, 保持空闲 */
     s_pomo = POMO_IDLE;
+  }
+
+  /* 番茄钟响铃: 超时自动停 */
+  if ((s_pomo_ring_start_ms != 0u) &&
+      ((now_ms - s_pomo_ring_start_ms) >= POMO_RING_MS))
+  {
+    s_pomo_ring_start_ms = 0u;
+    BspBuzzer_BeepOff();
   }
 
   /* 闹钟: 检查时分匹配(按重复类型: 响一次/每日/每周几) */
@@ -137,6 +147,8 @@ void SvcTimer_PomoSetMin(uint16_t min)
   {
     s_pomo = POMO_IDLE;            /* 关闭: 停止当前计时并清空剩余 */
     s_pomo_remain = 0u;
+    s_pomo_ring_start_ms = 0u;
+    BspBuzzer_BeepOff();           /* 关闭时若在响铃则停止 */
   }
 }
 
@@ -148,10 +160,22 @@ void SvcTimer_PomoSetSec(uint32_t sec)
   s_pomo = POMO_IDLE;
 }
 
-void SvcTimer_PomoEnable(uint8_t en) { s_pomo_en = en ? 1u : 0u; }
+void SvcTimer_PomoEnable(uint8_t en)
+{
+  s_pomo_en = en ? 1u : 0u;
+  if (!s_pomo_en)
+  {
+    /* 关闭开关: 停止计时并在响铃时停止蜂鸣 */
+    s_pomo = POMO_IDLE;
+    s_pomo_remain = 0u;
+    s_pomo_ring_start_ms = 0u;
+    BspBuzzer_BeepOff();
+  }
+}
 
 void SvcTimer_PomoStart(void)
 {
+  if (!s_pomo_en) return;          /* 番茄钟开关关闭: 开始无效 */
   if (s_pomo_total == 0u) return;  /* 番茄钟已关闭(时长0): 开始无效 */
   if (s_pomo == POMO_IDLE)
   {
@@ -176,6 +200,8 @@ void SvcTimer_PomoReset(void)
 {
   s_pomo = POMO_IDLE;
   s_pomo_remain = 0u;
+  s_pomo_ring_start_ms = 0u;
+  BspBuzzer_BeepOff();             /* 手动重置: 若在响铃则停止 */
 }
 
 uint8_t  SvcTimer_PomoState(void)      { return (uint8_t)s_pomo; }
