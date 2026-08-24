@@ -96,7 +96,15 @@ void App_Init(void)
   SvcTimer_PomoEnable(g_cfg.pomodo_en);      /* 重启后恢复番茄钟开关(Flash配置) */
   SvcTimer_AlarmSet(g_cfg.alarm_hour, g_cfg.alarm_min, g_cfg.alarm_repeat); /* 重启后恢复闹钟配置 */
   SvcTimer_AlarmSetWeekday(g_cfg.alarm_weekday);
-  SvcTimer_AlarmEnable(g_cfg.alarm_en);
+  if ((g_cfg.alarm_hour == 0u) && (g_cfg.alarm_min == 0u))
+  {
+    SvcTimer_AlarmClearSet();   /* 0:00 = 未设置/已重置 -> 屏显 NULL */
+  }
+  if (g_cfg.alarm_weekday == 1u)
+  {
+    SvcTimer_AlarmClearWeekdaySet();   /* 默认周一=未明确设置星期 */
+  }
+  (void)SvcTimer_AlarmEnable(g_cfg.alarm_en);
 
   /* 5. 初始化 BSP 外设(仅非 I2C; I2C 外设移到调度器启动后的 initTask) */
   BspFan_Init();

@@ -255,6 +255,14 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
         if (mm > 59u) mm = 0u;
         if (rep > ALARM_REPEAT_WEEKLY) rep = ALARM_REPEAT_DAILY;
         SvcTimer_AlarmSet(hh, mm, rep);
+        if (rep == ALARM_REPEAT_WEEKLY)
+        {
+          SvcTimer_AlarmClearWeekdaySet();  /* 严格模式: 选每周必须重新设星期才能开 */
+        }
+        else
+        {
+          SvcTimer_AlarmWeekdayErrSet(0u);  /* 选一次/每日: 清除 ERR */
+        }
         cfg->alarm_hour   = hh;
         cfg->alarm_min    = mm;
         cfg->alarm_repeat = rep;
@@ -269,17 +277,30 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
         cfg->alarm_weekday = (uint8_t)cmd->p1;
         request_config_save();
       }
+      else
+      {
+        /* 非法星期(0或>7): 置 ERR 标志(每周模式下 trep 保持 ERR) + 屏显提示 */
+        SvcTimer_AlarmWeekdayErrSet(1u);
+        ui_msg_t m = { UE_ALARM_WD_ERR, 0, 0, 0 };
+        osMessageQueuePut(qUI, &m, 0u, 0u);
+      }
       break;
 
     case CMD_ALARM_ENABLE:
-      SvcTimer_AlarmEnable((uint8_t)cmd->p1);
-      cfg->alarm_en = (uint8_t)cmd->p1;
-      request_config_save();
+      if (SvcTimer_AlarmEnable((uint8_t)cmd->p1) == 0)
+      {
+        cfg->alarm_en = (uint8_t)cmd->p1;
+        request_config_save();
+      }
+      /* 每周未设星期被拒: 不更新使能, talstatus 保持 CLOSE */
       break;
 
     case CMD_ALARM_RESET:
       SvcTimer_AlarmSet(0u, 0u, ALARM_REPEAT_ONCE);
-      SvcTimer_AlarmEnable(0u);
+      SvcTimer_AlarmClearSet();   /* 重置: 屏显 NULL */
+      SvcTimer_AlarmClearWeekdaySet();
+      SvcTimer_AlarmWeekdayErrSet(0u);
+      (void)SvcTimer_AlarmEnable(0u);
       cfg->alarm_hour    = 0u;
       cfg->alarm_min     = 0u;
       cfg->alarm_en      = 0u;
@@ -287,6 +308,8 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       cfg->alarm_weekday = 1u;
       request_config_save();
       break;
+
+    case CMD_BEEP_STOP:  SvcTimer_AlarmStopRing();  break;  /* 关闭本次闹铃(下次照常) */
 
     /* ---- 总时长重置（写 Flash 置 0, 需求 §七） ---- */
     case CMD_RESET_TOTAL_STUDY:

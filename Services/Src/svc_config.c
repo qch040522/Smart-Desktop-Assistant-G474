@@ -28,7 +28,7 @@ void SvcConfig_SetDefaults(app_config_t *cfg)
   cfg->alarm_hour      = 0u;                   /* 默认 0:00 */
   cfg->alarm_min       = 0u;
   cfg->alarm_en        = 0u;
-  cfg->alarm_repeat    = ALARM_REPEAT_DAILY;   /* 默认每日 */
+  cfg->alarm_repeat    = ALARM_REPEAT_ONCE;   /* 默认响一次 */
   cfg->alarm_weekday   = 1u;                   /* 1=周一 */
   cfg->pomodoro_min    = (uint16_t)POMO_DEFAULT_MINUTES;  /* 默认0=关闭 */
   cfg->pomodo_en       = 0u;

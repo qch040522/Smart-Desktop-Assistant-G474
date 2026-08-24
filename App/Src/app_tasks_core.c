@@ -26,8 +26,11 @@
 #include "bsp_flash.h"
 #include "bsp_uart_link.h"
 
-/* ---- 传感器任务挪动检测基准 ---- */
-static int32_t s_grav_base = 0;
+/* ---- 传感器任务挪动检测基准(三轴姿态差分) ---- */
+static int16_t  s_grav_base[3] = {0, 0, 0};   /* 基准三轴读数 */
+static uint8_t  s_grav_ready = 0u;            /* 基准已建立 */
+static uint32_t s_grav_set_ms = 0;            /* 基准建立计时(上电稳定后再取) */
+static uint32_t s_grav_update_ms = 0;         /* 基准缓慢更新计时(防漂移) */
 static uint32_t s_motion_invalid_ms = 0;
 
 /* ================================================================ */
@@ -78,6 +81,8 @@ void App_TaskSensor(void *arg)
   uint16_t lux = 0u;
   int16_t ax, ay, az;
   uint32_t last_imu = 0u;
+  uint32_t last_dht = 0u;   /* DHT11 低频采样节流(2s) */
+  uint32_t last_lux = 0u;   /* BH1750 中频采样节流(500ms) */
 
   /* 后台初始化 I2C 器件(调度器已启动): BH1750/MPU6050 + 总线扫描, 首次执行一次 */
   (void)BspBh1750_Init();
@@ -87,32 +92,42 @@ void App_TaskSensor(void *arg)
   for (;;)
   {
     Wdg_Heartbeat(WDG_SLOT_SENSOR);
+    uint32_t now = HAL_GetTick();
 
     dh.ok = 0u;
-    if (BspDht11_Read(&dh) == 0)
+    if ((now - last_dht) >= 2000u)   /* DHT11 低频采样(2s), 数据本身更新慢 */
     {
-      /* 合理性过滤: 温度 0~60°C(0.1°C: 0~600), 湿度 0~100%。
-       * DHT11 偶发"校验通过但数值离谱"的坏帧, 丢弃并保留上次有效值。 */
-      if ((dh.temp_x10 >= 0) && (dh.temp_x10 <= 600) && (dh.humi_pct <= 100u))
+      last_dht = now;
+      if (BspDht11_Read(&dh) == 0)
+      {
+        /* 合理性过滤: 温度 0~60°C(0.1°C: 0~600), 湿度 0~100%。
+         * DHT11 偶发"校验通过但数值离谱"的坏帧, 丢弃并保留上次有效值。 */
+        if ((dh.temp_x10 >= 0) && (dh.temp_x10 <= 600) && (dh.humi_pct <= 100u))
+        {
+          osMutexAcquire(mtxSensor, 0u);
+          g_sensor.temp_x10 = dh.temp_x10;
+          g_sensor.humi_pct = dh.humi_pct;
+          osMutexRelease(mtxSensor);
+        }
+      }
+    }
+
+    if ((now - last_lux) >= 500u)    /* BH1750 中频采样(500ms) */
+    {
+      last_lux = now;
+      if (BspBh1750_ReadLux(&lux) == 0)
       {
         osMutexAcquire(mtxSensor, 0u);
-        g_sensor.temp_x10 = dh.temp_x10;
-        g_sensor.humi_pct = dh.humi_pct;
+        g_sensor.lux = lux;
         osMutexRelease(mtxSensor);
       }
     }
 
-    if (BspBh1750_ReadLux(&lux) == 0)
-    {
-      osMutexAcquire(mtxSensor, 0u);
-      g_sensor.lux = lux;
-      osMutexRelease(mtxSensor);
-    }
-
-    if (((HAL_GetTick() - last_imu) >= 500u) &&
+    /* MPU6050 高频采样(100ms): 快速拿起/放下等动作也能捕捉到 */
+    if (((now - last_imu) >= 100u) &&
         (BspMpu6050_ReadAccel(&ax, &ay, &az) == 0))
     {
-      last_imu = HAL_GetTick();
+      last_imu = now;
       osMutexAcquire(mtxSensor, 0u);
       g_sensor.acc_raw[0] = ax;
       g_sensor.acc_raw[1] = ay;
@@ -120,35 +135,57 @@ void App_TaskSensor(void *arg)
       g_sensor.tick_ms = HAL_GetTick();
       osMutexRelease(mtxSensor);
 
-      int32_t mag = (int32_t)ax * (int32_t)ax + (int32_t)ay * (int32_t)ay +
-                    (int32_t)az * (int32_t)az;
-      if (s_grav_base == 0) s_grav_base = mag;
-
-      int32_t diff = s_grav_base - mag; if (diff < 0) diff = -diff;
-      if (diff > MOTION_DEADBAND_RAW)
+      /* 基准: 上电延迟2s建立(MPU6050未稳定时读数不可靠), 避免错误基准导致误判 */
+      if (!s_grav_ready)
       {
-        if (s_motion_invalid_ms == 0u)
+        if ((HAL_GetTick() - s_grav_set_ms) >= 2000u)
         {
-          s_motion_invalid_ms = HAL_GetTick();
+          s_grav_base[0] = ax; s_grav_base[1] = ay; s_grav_base[2] = az;
+          s_grav_ready = 1u;
+          s_grav_update_ms = HAL_GetTick();
         }
-        else if ((HAL_GetTick() - s_motion_invalid_ms) >= MOTION_CONFIRM_MS)
+      }
+
+      if (s_grav_ready)
+      {
+        /* X/Y/Z 各轴偏差(线性域 LSB): X/Y 用更小死区提高水平方向灵敏度 */
+        int32_t d0 = (int32_t)ax - s_grav_base[0]; if (d0 < 0) d0 = -d0;
+        int32_t d1 = (int32_t)ay - s_grav_base[1]; if (d1 < 0) d1 = -d1;
+        int32_t d2 = (int32_t)az - s_grav_base[2]; if (d2 < 0) d2 = -d2;
+
+        if ((d0 > MOTION_DEADBAND_XY) || (d1 > MOTION_DEADBAND_XY) ||
+            (d2 > MOTION_DEADBAND_Z))
         {
           /* 持续挪动: 提示"需要重新校准"（OLED/触摸屏/MQTT, 需求 §五） */
-          if (g_status.alert_flag == 0u)
+          if (s_motion_invalid_ms == 0u)
           {
-            g_status.alert_flag = 1u;
-            ui_msg_t m = { UE_RECALIB_NEEDED, 0, 0, 0 };
-            osMessageQueuePut(qUI, &m, 0u, 0u);
+            s_motion_invalid_ms = HAL_GetTick();
+          }
+          else if ((HAL_GetTick() - s_motion_invalid_ms) >= MOTION_CONFIRM_MS)
+          {
+            if (g_status.alert_flag == 0u)
+            {
+              g_status.alert_flag = 1u;
+              ui_msg_t m = { UE_RECALIB_NEEDED, 0, 0, 0 };
+              osMessageQueuePut(qUI, &m, 0u, 0u);
+            }
+          }
+        }
+        else
+        {
+          s_motion_invalid_ms = 0u;
+
+          /* 静止: 缓慢更新基准(每10s), 补偿零偏/温漂, 防止基准失效 */
+          if ((HAL_GetTick() - s_grav_update_ms) >= 10000u)
+          {
+            s_grav_base[0] = ax; s_grav_base[1] = ay; s_grav_base[2] = az;
+            s_grav_update_ms = HAL_GetTick();
           }
         }
       }
-      else
-      {
-        s_motion_invalid_ms = 0u;
-      }
     }
 
-    osDelay(1500u);
+    osDelay(20u);   /* 小步进: 让 MPU6050 100ms 高频采样生效 */
   }
 }
 

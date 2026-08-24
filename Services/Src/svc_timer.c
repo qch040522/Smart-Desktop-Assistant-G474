@@ -20,11 +20,17 @@ static pomo_state_e s_pomo = POMO_IDLE;
 static uint32_t s_pomo_remain = 0u;
 
 static uint8_t  s_alarm_hh = 0u, s_alarm_mm = 0u, s_alarm_en = 0u;   /* 默认 0:00 */
-static uint8_t  s_alarm_repeat = ALARM_REPEAT_DAILY;  /* 默认每日 */
+static uint8_t  s_alarm_repeat = ALARM_REPEAT_ONCE;  /* 默认响一次 */
 static uint8_t  s_alarm_weekday = 1u;                 /* 1=周一..7=周日 */
 static uint8_t  s_alarm_ringing = 0u;
 static uint32_t s_ring_start_ms = 0u;
-static uint32_t s_pomo_ring_start_ms = 0u;            /* 番茄钟响铃起始(ms), 0=未响铃 */
+/* 待生效闹钟设置(屏上"设置"先存缓冲, 点"开"才应用到实际并生效) */
+static uint8_t  s_pend_hh = 0u, s_pend_mm = 0u;
+static uint8_t  s_pend_repeat = ALARM_REPEAT_ONCE;
+static uint8_t  s_pend_weekday = 1u;
+static uint8_t  s_alarm_set = 0u;   /* 是否已设置闹钟时间 */
+static uint8_t  s_weekday_set = 0u; /* 是否明确设置过星期(每周模式必须先设) */
+static uint8_t  s_wd_err = 0u;      /* 星期输入非法标志(每周模式下保持 ERR) */static uint32_t s_pomo_ring_start_ms = 0u;            /* 番茄钟响铃起始(ms), 0=未响铃 */
 
 void SvcTimer_Init(const app_timing_snapshot_t *snap)
 {
@@ -208,25 +214,62 @@ uint8_t  SvcTimer_PomoState(void)      { return (uint8_t)s_pomo; }
 uint32_t SvcTimer_PomoRemainSec(void)  { return s_pomo_remain; }
 
 /* ---- 闹钟 ---- */
+/* 设置仅存入"待生效"缓冲, 点"开"(AlarmEnable(1)) 才应用到实际并开始生效 */
 void SvcTimer_AlarmSet(uint8_t h, uint8_t m, uint8_t repeat)
 {
-  s_alarm_hh = h;
-  s_alarm_mm = m;
   if (repeat > ALARM_REPEAT_WEEKLY) repeat = ALARM_REPEAT_DAILY;
-  s_alarm_repeat = repeat;
+  s_pend_hh = h;
+  s_pend_mm = m;
+  s_pend_repeat = repeat;
+  s_alarm_set = 1u;   /* 设置过时间(含 0:00); 未设置/重置由 ClearSet 清除 */
+}
+void SvcTimer_AlarmClearSet(void)
+{
+  s_alarm_set = 0u;
 }
 void SvcTimer_AlarmSetWeekday(uint8_t wd)
 {
-  if ((wd >= 1u) && (wd <= 7u)) s_alarm_weekday = wd;
+  if ((wd >= 1u) && (wd <= 7u))
+  {
+    s_pend_weekday = wd;
+    s_weekday_set  = 1u;   /* 明确设置过星期 */
+    s_wd_err = 0u;         /* 正确星期: 清除 ERR */
+  }
 }
-void SvcTimer_AlarmEnable(uint8_t en)
+void SvcTimer_AlarmWeekdayErrSet(uint8_t on)
 {
+  s_wd_err = on ? 1u : 0u;
+}
+uint8_t SvcTimer_AlarmWeekdayErr(void)
+{
+  return s_wd_err;
+}
+void SvcTimer_AlarmClearWeekdaySet(void)
+{
+  s_weekday_set = 0u;
+}
+int SvcTimer_AlarmEnable(uint8_t en)
+{
+  if (en)
+  {
+    /* 每周模式必须先设星期, 否则拒绝开启 */
+    if ((s_pend_repeat == ALARM_REPEAT_WEEKLY) && (s_weekday_set == 0u))
+    {
+      return -1;
+    }
+    /* 开启: 应用待生效设置 */
+    s_alarm_hh      = s_pend_hh;
+    s_alarm_mm      = s_pend_mm;
+    s_alarm_repeat  = s_pend_repeat;
+    s_alarm_weekday = s_pend_weekday;
+  }
   s_alarm_en = en ? 1u : 0u;
   if (!s_alarm_en)
   {
     s_alarm_ringing = 0u;
     BspBuzzer_BeepOff();
   }
+  return 0;
 }
 void SvcTimer_AlarmAck(void)
 {
@@ -234,12 +277,20 @@ void SvcTimer_AlarmAck(void)
   if (s_alarm_repeat == ALARM_REPEAT_ONCE) s_alarm_en = 0u;  /* 响一次停后关闭 */
   BspBuzzer_BeepOff();
 }
+/* 关闭本次响铃(不改变使能/设置, 下次照常响) */
+void SvcTimer_AlarmStopRing(void)
+{
+  s_alarm_ringing = 0u;
+  BspBuzzer_BeepOff();
+}
 uint8_t SvcTimer_AlarmRinging(void) { return s_alarm_ringing; }
 uint8_t SvcTimer_AlarmEnabled(void) { return s_alarm_en; }
-uint8_t SvcTimer_AlarmHour(void)    { return s_alarm_hh; }
-uint8_t SvcTimer_AlarmMin(void)     { return s_alarm_mm; }
-uint8_t SvcTimer_AlarmRepeat(void)  { return s_alarm_repeat; }
-uint8_t SvcTimer_AlarmWeekday(void) { return s_alarm_weekday; }
+uint8_t SvcTimer_AlarmHasSet(void)  { return s_alarm_set; }
+/* 以下 getter 返回"待生效设置"值(供 UI/上报), 设置后立即反馈 */
+uint8_t SvcTimer_AlarmHour(void)    { return s_pend_hh; }
+uint8_t SvcTimer_AlarmMin(void)     { return s_pend_mm; }
+uint8_t SvcTimer_AlarmRepeat(void)  { return s_pend_repeat; }
+uint8_t SvcTimer_AlarmWeekday(void) { return s_pend_weekday; }
 
 void SvcTimer_BuildSnapshot(app_timing_snapshot_t *snap)
 {

@@ -92,6 +92,7 @@ typedef enum {
   CMD_ALARM_WEEKDAY,       /* p1=星期(1=周一..7=周日) */
   CMD_ALARM_ENABLE,        /* p1=0/1 */
   CMD_ALARM_RESET,
+  CMD_BEEP_STOP,           /* 关闭本次闹铃(不改变使能/设置) */
 
   CMD_RESET_TOTAL_STUDY,   /* 总时长归零 */
 
@@ -124,6 +125,7 @@ typedef enum {
   UE_POMO_DONE,          /* 番茄钟结束 */
   UE_ALARM_RING,         /* 闹钟响 */
   UE_ALARM_RELEASE,      /* 闹钟停止 */
+  UE_ALARM_WD_ERR,       /* 非法星期输入(1~7之外) */
   UE_LINK_DOWN,          /* ESP32 断链 */
   UE_LINK_UP,            /* 链路恢复 */
   UE_OCCUPY_CHG,         /* 有人/无人变化 a=occupy_state */

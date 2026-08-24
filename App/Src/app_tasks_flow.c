@@ -38,7 +38,11 @@ volatile uint32_t g_ui_dbg_time = 0u;   /* 调试: UI 最近读到的 RTC 时间
 #define TJC_OBJ_TODAY      "page_auto.ttoday"
 #define TJC_OBJ_TOTAL      "page_auto.ttotal"
 #define TJC_OBJ_ALARM      "page_auto.talarm"
+#define TJC_OBJ_ALARM_MAN  "page_manual.talarm2"   /* 手动页闹钟时间 */
 #define TJC_OBJ_ALARM_REP  "page_auto.trep"
+#define TJC_OBJ_ALARM_REP_MAN "page_manual.trep2"  /* 手动页重复模式 */
+#define TJC_OBJ_ALARM_ST   "page_auto.talstatus"   /* 闹钟开关状态 OPEN/CLOSE */
+#define TJC_OBJ_ALARM_ST_MAN "page_manual.talstatus2" /* 手动页闹钟开关状态 */
 
 static void ui_put(ui_msg_t m)
 {
@@ -66,10 +70,16 @@ static void tjc_hms(char *buf, size_t n, uint32_t sec)
 
 static const char *tjc_alarm_rep_txt(void)
 {
+  static const char *wd[] = { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" };
   switch (SvcTimer_AlarmRepeat())
   {
     case ALARM_REPEAT_ONCE:   return "ONCE";
-    case ALARM_REPEAT_WEEKLY: return "WEEKLY";
+    case ALARM_REPEAT_WEEKLY:
+    {
+      uint8_t w = SvcTimer_AlarmWeekday();
+      if ((w >= 1u) && (w <= 7u)) return wd[w - 1u];   /* WEEKLY 显示星期缩写 */
+      return "WEEKLY";
+    }
     default:                  return "DAILY";
   }
 }
@@ -109,6 +119,7 @@ static void on_tjc_event(const tjc_event_t *evt)
     case 0x10u: c.id = CMD_WAKEUP;             break;
     case 0x11u: c.id = CMD_SET_RTC_TIME;       break;  /* 校时: p1=时 p2=分 p3=秒 */
     case 0x12u: c.id = CMD_ALARM_WEEKDAY;      break;  /* 闹钟星期: p1=1(周一)~7(周日) */
+    case 0x13u: c.id = CMD_BEEP_STOP;          break;  /* 关闭本次闹铃 */
     default:    c.id = CMD_NONE;               break;
   }
   if (c.id != CMD_NONE)
@@ -227,6 +238,10 @@ void App_TaskPosture(void *arg)
           BspLed_On();  osDelay(120u);
           BspLed_Off(); osDelay(120u);
         }
+        if (g_status.alert_flag != 0u)   /* 仍处于"需校准"状态: 告警闪烁后恢复常亮 */
+        {
+          BspLed_On();
+        }
       }
     }
     else
@@ -266,15 +281,22 @@ void App_TaskUi(void *arg)
           (void)snprintf(s_notice, sizeof(s_notice), "NEED RECALIB");
           s_notice_until = BSP_GetTick() + 5000u;
           BspTjc_SetText(TJC_OBJ_ALERT, "NEED RECALIB");
+          BspLed_On();   /* MPU6050 挪动需校准: LED 常亮提示 */
           break;
         case UE_CALIB_DONE:
           (void)snprintf(s_notice, sizeof(s_notice), "CALIB OK %d.%d", m.a / 10, m.a % 10);
           s_notice_until = BSP_GetTick() + 5000u;
           BspTjc_SetText(TJC_OBJ_ALERT, "CALIB OK");
+          BspLed_Off();  /* 校准完成: 熄灭校准提示 LED */
           break;
         case UE_ALARM_RING:
           (void)snprintf(s_notice, sizeof(s_notice), "ALARM!");
           s_notice_until = BSP_GetTick() + 5000u;
+          break;
+        case UE_ALARM_WD_ERR:
+          (void)snprintf(s_notice, sizeof(s_notice), "WEEKDAY 1-7!");
+          s_notice_until = BSP_GetTick() + 3000u;
+          BspTjc_SetText(TJC_OBJ_ALERT, "WEEKDAY 1-7!");
           break;
         case UE_LINK_DOWN:
           (void)snprintf(s_notice, sizeof(s_notice), "LINK DOWN");
@@ -352,10 +374,37 @@ void App_TaskUi(void *arg)
         tjc_hms(tbuf, sizeof(tbuf), SvcTimer_TotalSec());
         BspTjc_SetText(TJC_OBJ_TOTAL, tbuf);
 
-        (void)snprintf(tbuf, sizeof(tbuf), "%02d:%02d",
-                       (int)SvcTimer_AlarmHour(), (int)SvcTimer_AlarmMin());
+        /* 闹钟时间: 未设置(0:00)/重置后显示 NULL */
+        if (SvcTimer_AlarmHasSet())
+        {
+          (void)snprintf(tbuf, sizeof(tbuf), "%02d:%02d",
+                         (int)SvcTimer_AlarmHour(), (int)SvcTimer_AlarmMin());
+        }
+        else
+        {
+          (void)snprintf(tbuf, sizeof(tbuf), "NULL");
+        }
         BspTjc_SetText(TJC_OBJ_ALARM, tbuf);
-        BspTjc_SetText(TJC_OBJ_ALARM_REP, tjc_alarm_rep_txt());
+        BspTjc_SetText(TJC_OBJ_ALARM_MAN, tbuf);
+        if (!SvcTimer_AlarmHasSet())
+        {
+          BspTjc_SetText(TJC_OBJ_ALARM_REP, "NULL");   /* 未设置闹钟: NULL */
+          BspTjc_SetText(TJC_OBJ_ALARM_REP_MAN, "NULL");
+        }
+        else if ((SvcTimer_AlarmRepeat() == ALARM_REPEAT_WEEKLY) && SvcTimer_AlarmWeekdayErr())
+        {
+          BspTjc_SetText(TJC_OBJ_ALARM_REP, "ERR");      /* 每周且星期非法: 保持 ERR */
+          BspTjc_SetText(TJC_OBJ_ALARM_REP_MAN, "ERR");
+        }
+        else
+        {
+          BspTjc_SetText(TJC_OBJ_ALARM_REP, tjc_alarm_rep_txt());
+          BspTjc_SetText(TJC_OBJ_ALARM_REP_MAN, tjc_alarm_rep_txt());
+        }
+        BspTjc_SetText(TJC_OBJ_ALARM_ST,
+                       SvcTimer_AlarmEnabled() ? "OPEN" : "CLOSE");
+        BspTjc_SetText(TJC_OBJ_ALARM_ST_MAN,
+                       SvcTimer_AlarmEnabled() ? "OPEN" : "CLOSE");
       }
     }
     osDelay(200u);

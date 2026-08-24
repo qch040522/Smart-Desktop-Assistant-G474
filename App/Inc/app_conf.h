@@ -36,8 +36,9 @@ extern "C" {
 #define POSTURE_BASE_ANGLE_DEFAULT   0       /* 默认基准角 0 */
 
 /* --- MPU6050 挪动 / 基准失效检测 (需求 §五 / §12.8) --- */
-#define MOTION_DEADBAND_RAW          900     /* 合成加速度偏差死区(单位: raw) */
-#define MOTION_CONFIRM_MS            2000u   /* 偏差持续确认窗口 2s */
+#define MOTION_DEADBAND_XY           200     /* X/Y轴死区(线性域LSB, 约0.012g, 水平方向更灵敏) */
+#define MOTION_DEADBAND_Z            400     /* Z轴死区(线性域LSB, 约0.024g) */
+#define MOTION_CONFIRM_MS            200u    /* 偏差持续确认窗口 0.2s(两次采样即触发) */
 
 /* ============================ 设备参数 ============================ */
 #define FAN_PWM_PERIOD               8500u   /* TIM4 计数周期, 0% ~ 100% = 0~8500 */
