@@ -20,6 +20,7 @@ volatile uint16_t g_lamp_cmd_idx = 0u;
 static const uint8_t s_th_lvls[POSTURE_TH_LVL_COUNT] = { 10u, 15u, 20u, 25u };
 
 static sys_mode_t     s_mode;
+static study_mode_t   s_study;          /* 学习/休闲子状态 */
 static occupy_state_t s_occupy;
 static link_state_t   s_link;
 static uint8_t        s_threshold_lvl;
@@ -29,20 +30,15 @@ static uint8_t        s_link_count;
 void SvcState_Init(app_config_t *cfg)
 {
   s_mode           = (sys_mode_t)cfg->sys_mode;
-  if (s_mode >= SYS_MODE_NUM) s_mode = SYS_MODE_LEISURE;
+  if (s_mode >= SYS_MODE_NUM) s_mode = SYS_MODE_AUTO;   /* 默认自动 */
+  s_study          = (study_mode_t)cfg->study_mode;
+  if (s_study >= STUDY_MODE_NUM) s_study = STUDY_MODE_LEISURE;  /* 默认休闲 */
   s_occupy         = OCCUPY_UNKNOWN;
   s_link           = LINK_OK;
   s_threshold_lvl  = cfg->angle_threshold;
   if (s_threshold_lvl >= POSTURE_TH_LVL_COUNT) s_threshold_lvl = POSTURE_TH_LVL_DEFAULT;
   s_last_valid_ms  = 0u;
   s_link_count     = 0u;
-}
-
-/* 长期无效/should转休眠的判定 */
-static int should_sleep(sys_mode_t m)
-{
-  /* 学习/休闲 才可能无人自动休眠 */
-  return (m == SYS_MODE_STUDY) || (m == SYS_MODE_LEISURE);
 }
 
 void SvcState_Tick(uint32_t now_ms, uint8_t any_frame, uint8_t valid_frame)
@@ -69,33 +65,13 @@ void SvcState_Tick(uint32_t now_ms, uint8_t any_frame, uint8_t valid_frame)
   {
     s_occupy = OCCUPY_NOBODY;
   }
-
-#if 0   /* 临时测试(串口屏调试): 禁用无人自动休眠, 便于手动控制风扇/灯 */
-  /* 若处于业务模式且无人 -> 进入业务休眠; 有人 -> 唤醒 */
-  if (s_mode != SYS_MODE_SLEEP)
-  {
-    if ((s_occupy == OCCUPY_NOBODY) && should_sleep(s_mode))
-    {
-      s_mode = SYS_MODE_SLEEP;
-    }
-  }
-  else
-  {
-    /* 休眠中有人可唤醒 */
-    if (s_occupy == OCCUPY_HUMAN)
-    {
-      /* 唤醒到休闲（默认） */
-      s_mode = SYS_MODE_LEISURE;
-    }
-  }
-#endif
 }
 
 sys_mode_t    SvcState_Mode(void)   { return s_mode; }
+study_mode_t  SvcState_Study(void)  { return s_study; }
 occupy_state_t SvcState_Occupy(void) { return s_occupy; }
 link_state_t   SvcState_Link(void)   { return s_link; }
 uint8_t        SvcState_ThresholdDeg(void) { return s_th_lvls[s_threshold_lvl]; }
-int            SvcState_IsSleeping(void)   { return (s_mode == SYS_MODE_SLEEP); }
 
 void SvcState_SetThresholdLvl(uint8_t lvl)
 {
@@ -106,8 +82,13 @@ void SvcState_SetThresholdLvl(uint8_t lvl)
 void SvcState_SetMode(sys_mode_t m)
 {
   if (m >= SYS_MODE_NUM) return;
-  /* 直接进入, 无人判定仍由 Tick 维持 */
   s_mode = m;
+}
+
+void SvcState_SetStudyMode(study_mode_t m)
+{
+  if (m >= STUDY_MODE_NUM) return;
+  s_study = m;
 }
 
 /* 请求配置落盘（低频配置变更后调用, 需求 §七） */
@@ -136,7 +117,7 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
 
   switch (cmd->id)
   {
-    case CMD_SET_SYS_MODE:
+    case CMD_SET_SYS_MODE:   /* 顶层系统模式: 0=自动 1=手动 */
       if ((uint8_t)cmd->p1 < SYS_MODE_NUM)
       {
         SvcState_SetMode((sys_mode_t)cmd->p1);
@@ -145,11 +126,11 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       }
       break;
 
-    case CMD_WAKEUP:
-      if (s_mode == SYS_MODE_SLEEP)
+    case CMD_SET_CTRL_MODE:  /* 学习/休闲子状态: 0=休闲 1=学习 */
+      if ((uint8_t)cmd->p1 < STUDY_MODE_NUM)
       {
-        s_mode = SYS_MODE_LEISURE;
-        cfg->sys_mode = SYS_MODE_LEISURE;
+        SvcState_SetStudyMode((study_mode_t)cmd->p1);
+        cfg->study_mode = (uint8_t)cmd->p1;
         request_config_save();
       }
       break;
@@ -163,22 +144,14 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
       }
       break;
 
-    /* ---- 环境控制: 0x02 切页面; 0x03/0x04 设设备(自动挡/手动挡) ---- */
-    case CMD_SET_CTRL_MODE:   /* 页面切换: 0自动监测页/1手动控制页 */
-      if ((cmd->p1 == CTRL_MODE_AUTO) || (cmd->p1 == CTRL_MODE_MANUAL))
-      {
-        SvcEnv_SetCtrlMode((ctrl_mode_t)cmd->p1);
-        cfg->ctrl_mode = (uint8_t)cmd->p1;
-        request_config_save();
-      }
-      break;
-
+    /* ---- 环境控制: 0x03/0x04 设设备(手动值) ---- */
     case CMD_FAN_LEVEL:
-      /* 设备按钮只存在于手动控制页: 收到即隐式切回手动页模式(兜底, 屏幕切页0x02未配时也能用) */
-      SvcEnv_SetCtrlMode(CTRL_MODE_MANUAL);
+      /* 收到手动风扇指令: 隐式切到手动顶层模式(用户想手动控制) */
+      SvcState_SetMode(SYS_MODE_MANUAL);
+      cfg->sys_mode = SYS_MODE_MANUAL;
       if (cmd->p1 < 0)
       {
-        SvcEnv_SetFanAuto();    /* 手动页风扇自动挡: 按温度 */
+        SvcEnv_SetFanAuto();    /* 手动模式风扇自动挡: 按温度 */
       }
       else if ((uint8_t)cmd->p1 < FAN_LEVELS)
       {
@@ -191,10 +164,11 @@ void SvcState_ApplyCmd(const app_cmd_t *cmd, app_config_t *cfg)
     case CMD_LAMP_BRIGHT:
       g_lamp_cmd_hist[g_lamp_cmd_idx % 16u] = cmd->p1;   /* 调试: 记录原始p1 */
       g_lamp_cmd_idx++;
-      SvcEnv_SetCtrlMode(CTRL_MODE_MANUAL);   /* 同上: 设备按钮=手动页 */
+      SvcState_SetMode(SYS_MODE_MANUAL);   /* 同上: 手动控制灯 */
+      cfg->sys_mode = SYS_MODE_MANUAL;
       if (cmd->p1 < 0)
       {
-        SvcEnv_SetLampAuto();   /* 手动页台灯自动挡: 按光照 */
+        SvcEnv_SetLampAuto();   /* 手动模式台灯自动挡: 按光照 */
       }
       else if ((uint8_t)cmd->p1 <= LAMP_PWM_MAX)
       {

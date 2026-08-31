@@ -65,7 +65,7 @@ static int alarm_day_match(void)
   return (w == s_alarm_weekday);                        /* 每周几匹配 */
 }
 
-void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
+void SvcTimer_Tick(study_mode_t study, uint32_t now_ms)
 {
   uint32_t ymd = BspRtc_GetYmd();
   if (ymd != s_last_ymd)
@@ -75,7 +75,7 @@ void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms)
   }
 
   /* 学习时长累加 */
-  if (mode == SYS_MODE_STUDY)
+  if (study == STUDY_MODE_STUDY)
   {
     s_cur_sec++;
     s_today_sec++;

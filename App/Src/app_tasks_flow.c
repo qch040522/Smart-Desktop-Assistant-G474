@@ -207,8 +207,15 @@ static void on_tjc_event(const tjc_event_t *evt)
 
   switch (evt->cmd)
   {
-    case 0x01u: c.id = CMD_SET_SYS_MODE;       break;
-    case 0x02u: c.id = CMD_SET_CTRL_MODE;      break;
+    /* TJC 屏命令码为旧版语义: 0x01=学习/休闲, 0x02=自动/手动。
+     * 映射到新语义:
+     *   TJC 0x01 → CMD_SET_CTRL_MODE(学习休闲); 参数翻转:
+     *     TJC p1=0(学习) → STUDY_MODE_STUDY(1), TJC p1=1(休闲) → STUDY_MODE_LEISURE(0)
+     *   TJC 0x02 → CMD_SET_SYS_MODE(自动手动); 参数一致: TJC 0=自动 1=手动 */
+    case 0x01u: c.id = CMD_SET_CTRL_MODE;
+      c.p1 = (evt->p1 == 0) ? STUDY_MODE_STUDY : STUDY_MODE_LEISURE;
+      break;
+    case 0x02u: c.id = CMD_SET_SYS_MODE;       break;  /* TJC: 自动(0)/手动(1) */
     case 0x03u: c.id = CMD_FAN_LEVEL;          break;
     case 0x04u: c.id = CMD_LAMP_BRIGHT;        break;
     case 0x05u: c.id = CMD_START_CALIB;        break;
@@ -251,6 +258,7 @@ void App_TaskState(void *arg)
   (void)arg;
   app_cmd_t c;
   sys_mode_t    last_mode = SYS_MODE_NUM;
+  study_mode_t  last_study = STUDY_MODE_NUM;
   occupy_state_t last_occ = 0xFEu;
   link_state_t  last_link = 0xFEu;
 
@@ -269,27 +277,28 @@ void App_TaskState(void *arg)
       g_frame_any = 0u; g_frame_valid = 0u;
       SvcState_Tick(HAL_GetTick(), any, vld);
 
+      /* 学习/休闲子状态变化: 退出学习 -> 时长快照落盘 */
+      if (SvcState_Study() != last_study)
+      {
+        study_mode_t ns = SvcState_Study();
+        if (last_study == STUDY_MODE_STUDY)
+        {
+          request_timing_save();         /* 退出学习子状态快照时长 */
+        }
+        last_study = ns;
+        g_status.study_mode = (uint8_t)ns;
+        ui_msg_t m = { UE_MODE_CHANGED, (int16_t)ns, 0, 0 };
+        ui_put(m);
+      }
+
+      /* 顶层模式(自动/手动)变化 */
       if (SvcState_Mode() != last_mode)
       {
         sys_mode_t nm = SvcState_Mode();
-        /* 模式迁移副作用（需求 §四/§七/§11.1） */
-        if (nm == SYS_MODE_SLEEP)
-        {
-          SvcLink_SetReportPeriod(3u);   /* 休眠期降频保活(2~3s) */
-          request_timing_save();         /* 退出学习/进入休眠快照时长 */
-        }
-        else if (last_mode == SYS_MODE_SLEEP)
-        {
-          SvcLink_SetReportPeriod(1u);   /* 唤醒后恢复 1s 上报 */
-        }
-        else if (last_mode == SYS_MODE_STUDY)
-        {
-          request_timing_save();         /* 退出学习模式快照 */
-        }
         last_mode = nm;
-        ui_msg_t m = { UE_MODE_CHANGED, (int16_t)nm, 0, 0 };
-        ui_put(m);
         g_status.sys_mode = (uint8_t)nm;
+        ui_msg_t m = { UE_CTRL_CHANGED, (int16_t)nm, 0, 0 };
+        ui_put(m);
       }
 
       if (SvcState_Occupy() != last_occ)
@@ -335,8 +344,8 @@ void App_TaskPosture(void *arg)
         g_frame_valid = 1u;
       }
 
-      uint8_t thr = (uint8_t)(SvcState_IsSleeping() ? 0u : SvcState_ThresholdDeg());
-      uint8_t trig = SvcPosture_OnAiFrame(&f, SvcState_Mode(), thr,
+      uint8_t thr = SvcState_ThresholdDeg();
+      uint8_t trig = SvcPosture_OnAiFrame(&f, SvcState_Study(), thr,
                      SvcPosture_GetBaseAngle(), HAL_GetTick());
       if (trig)
       {

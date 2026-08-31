@@ -205,7 +205,6 @@ void App_TaskEnv(void *arg)
     SvcEnv_Update(&sen, SvcState_Mode(), &g_cfg, SvcState_Occupy());
     g_status.fan_level       = SvcEnv_FanLevel();
     g_status.lamp_brightness = (uint16_t)SvcEnv_LampBrightness();
-    g_status.ctrl_mode       = SvcEnv_CtrlMode();
     osDelay(1000u);
   }
 }
@@ -219,7 +218,7 @@ void App_TaskTimer(void *arg)
   for (;;)
   {
     Wdg_Heartbeat(WDG_SLOT_TIMER);
-    SvcTimer_Tick(SvcState_Mode(), HAL_GetTick());
+    SvcTimer_Tick(SvcState_Study(), HAL_GetTick());
     g_status.study_cur_sec   = SvcTimer_CurSec();
     g_status.study_today_sec = SvcTimer_TodaySec();
     g_status.study_total_sec = SvcTimer_TotalSec();

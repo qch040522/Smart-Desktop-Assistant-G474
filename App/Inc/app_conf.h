@@ -20,9 +20,12 @@ extern "C" {
 
 /* ============================ 业务参数 ============================ */
 /* --- 无人 / 断链判定 (需求 §四 / §11.1) --- */
-#define AI_REPORT_PERIOD_MS         1000u   /* ESP32 0x01 上报周期(默认1s) */
+#define AI_REPORT_PERIOD_MS         1000u   /* ESP32 0x01 上报周期目标(默认1s) */
 #define AI_REPORT_PERIOD_SLEEP_MS   2500u   /* 业务休眠期上报周期 */
-#define UNHUMAN_TIMEOUT_MS            15000u  /* 无有效帧超过 15s -> 无人(ESP32 实际约4~5s/帧) */
+/* 无人判定: 距上次有效帧超过该时间判无人。
+ * 注意: ESP32 AI 推理耗时约 4~5s/帧(非 1s), 若按帧数(如3帧)判定会在帧间隙误判无人
+ * 导致风扇/台灯周期性开关, 故改为时间窗口。 */
+#define UNHUMAN_TIMEOUT_MS          15000u  /* 距上次有效帧 15s 无更新 -> 无人 */
 #define LINK_DOWN_FRAME_TH            10u   /* 连续>=10个周期无任何0x01帧 -> 断链 */
 
 /* --- 坐姿告警 (需求 §五) --- */

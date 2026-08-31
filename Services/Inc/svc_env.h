@@ -36,8 +36,6 @@ void SvcEnv_SetFanManual(uint8_t level);
 void SvcEnv_SetFanAuto(void);
 void SvcEnv_SetLampManual(uint8_t bright);
 void SvcEnv_SetLampAuto(void);
-void SvcEnv_SetCtrlMode(ctrl_mode_t m);   /* 页面切换(0x02) */
-ctrl_mode_t SvcEnv_CtrlMode(void);
 
 #ifdef __cplusplus
 }

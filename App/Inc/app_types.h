@@ -14,19 +14,21 @@ extern "C" {
 
 /* ============================ 枚举类型 ============================ */
 
-/** 业务模式（需求 §四 状态机） */
+/** 顶层系统模式（控制风扇/灯方式）:
+ *  自动 = 摄像头检测有人才开风扇/灯（按温度/光照自动）
+ *  手动 = 用户手动控制风扇/灯（不依赖摄像头） */
 typedef enum {
-  SYS_MODE_STUDY = 0,   /* 学习模式 */
-  SYS_MODE_LEISURE,     /* 休闲模式 */
-  SYS_MODE_SLEEP,       /* 业务休眠 */
+  SYS_MODE_AUTO = 0,    /* 自动 */
+  SYS_MODE_MANUAL,      /* 手动 */
   SYS_MODE_NUM
 } sys_mode_t;
 
-/** 外设控制模式（需求 §六 手动优先/手动持久） */
+/** 学习/休闲子状态（控制坐姿提醒 + 学习计时, 在自动/手动下都生效） */
 typedef enum {
-  CTRL_MODE_AUTO = 0,   /* 自动 */
-  CTRL_MODE_MANUAL      /* 手动(持久,直到切回自动) */
-} ctrl_mode_t;
+  STUDY_MODE_LEISURE = 0,  /* 休闲: 坐姿提醒关 + 学习时长不累计 */
+  STUDY_MODE_STUDY,        /* 学习: 坐姿提醒开 + 学习时长累计 */
+  STUDY_MODE_NUM
+} study_mode_t;
 
 /** 无人/断链综合状态 */
 typedef enum {
@@ -140,8 +142,8 @@ typedef struct {
 typedef struct {
   uint32_t magic;             /* FLASH_CFG_MAGIC */
   uint32_t version;
-  uint8_t  sys_mode;          /* 上次模式(回调) */
-  uint8_t  ctrl_mode;         /* 自动/手动持久 */
+  uint8_t  sys_mode;          /* 顶层模式: 0=自动 1=手动 */
+  uint8_t  study_mode;        /* 学习/休闲子状态: 0=休闲 1=学习 */
   int16_t  angle_base;        /* 基准角(0.1°) */
   uint8_t  angle_threshold;   /* 当前告警阈值(°) */
   uint8_t  alarm_hour;
@@ -168,8 +170,8 @@ typedef struct {
 
 /** 设备当前运行状态（汇总, 供 0x12 上报 / UI 显示） */
 typedef struct {
-  uint8_t  sys_mode;
-  uint8_t  ctrl_mode;
+  uint8_t  sys_mode;          /* 顶层模式: 0=自动 1=手动 */
+  uint8_t  study_mode;        /* 学习/休闲子状态: 0=休闲 1=学习 */
   uint8_t  fan_level;          /* 0~N */
   uint16_t lamp_brightness;    /* 0~255 */
   uint32_t study_cur_sec;

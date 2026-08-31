@@ -171,36 +171,53 @@ void SvcLink_Service(void)
 
 void SvcLink_SendStatus(const dev_status_t *st)
 {
-  uint8_t payload[16];
+  uint8_t payload[23];
   uint32_t v;
   if (st == NULL) return;
 
-  /* 0x12 设备状态回传（对齐 UART_PROTOCOL.md §4.3, 16 字节, 多字节整数小端） */
-  payload[0] = st->sys_mode;                                  /* 模式 0学习/1休闲/2休眠 */
-  payload[1] = (uint8_t)((uint32_t)st->fan_level * 100u / (FAN_LEVELS - 1u)); /* 风扇 0~100 */
-  payload[2] = (uint8_t)(st->lamp_brightness & 0xFFu);        /* 台灯亮度 0~255 */
+  /* 0x12 设备状态回传（23 字节, 多字节整数小端）:
+   *   [0]   = 顶层系统模式 0自动/1手动
+   *   [1]   = 学习/休闲子状态 0休闲/1学习
+   *   [17]  = 番茄钟状态 0=idle 1=run 2=pause
+   *   [18-19] = 番茄钟剩余秒数 u16 LE
+   *   [20]  = 番茄钟使能
+   *   [21]  = 闹钟时 (0-23)
+   *   [22]  = 闹钟分 (0-59) */
+  payload[0] = st->sys_mode;                                  /* 顶层模式 0自动/1手动 */
+  payload[1] = st->study_mode;                                /* 学习休闲 0休闲/1学习 */
+  payload[2] = (uint8_t)((uint32_t)st->fan_level * 100u / (FAN_LEVELS - 1u)); /* 风扇 0~100 */
+  payload[3] = (uint8_t)(st->lamp_brightness & 0xFFu);        /* 台灯亮度 0~255 */
 
   v = st->study_total_sec;                                    /* 总学习时长(s), u32 LE */
-  payload[3]  = (uint8_t)(v & 0xFFu);
-  payload[4]  = (uint8_t)((v >> 8u) & 0xFFu);
-  payload[5]  = (uint8_t)((v >> 16u) & 0xFFu);
-  payload[6]  = (uint8_t)((v >> 24u) & 0xFFu);
+  payload[4]  = (uint8_t)(v & 0xFFu);
+  payload[5]  = (uint8_t)((v >> 8u) & 0xFFu);
+  payload[6]  = (uint8_t)((v >> 16u) & 0xFFu);
+  payload[7]  = (uint8_t)((v >> 24u) & 0xFFu);
 
   v = st->study_today_sec;                                    /* 今日学习时长(s), u32 LE */
-  payload[7]  = (uint8_t)(v & 0xFFu);
-  payload[8]  = (uint8_t)((v >> 8u) & 0xFFu);
-  payload[9]  = (uint8_t)((v >> 16u) & 0xFFu);
-  payload[10] = (uint8_t)((v >> 24u) & 0xFFu);
+  payload[8]  = (uint8_t)(v & 0xFFu);
+  payload[9]  = (uint8_t)((v >> 8u) & 0xFFu);
+  payload[10] = (uint8_t)((v >> 16u) & 0xFFu);
+  payload[11] = (uint8_t)((v >> 24u) & 0xFFu);
 
   v = st->study_cur_sec;                                      /* 本次学习时长(s), u32 LE */
-  payload[11] = (uint8_t)(v & 0xFFu);
-  payload[12] = (uint8_t)((v >> 8u) & 0xFFu);
-  payload[13] = (uint8_t)((v >> 16u) & 0xFFu);
-  payload[14] = (uint8_t)((v >> 24u) & 0xFFu);
+  payload[12] = (uint8_t)(v & 0xFFu);
+  payload[13] = (uint8_t)((v >> 8u) & 0xFFu);
+  payload[14] = (uint8_t)((v >> 16u) & 0xFFu);
+  payload[15] = (uint8_t)((v >> 24u) & 0xFFu);
 
-  payload[15] = SvcTimer_AlarmRinging();                      /* 1=闹钟响铃中 */
+  payload[16] = SvcTimer_AlarmRinging();                      /* 1=闹钟响铃中 */
 
-  BspUartLink_SendFrame(CMD_DEV_STATUS, payload, 16u);
+  /* ---- 番茄钟 / 闹钟 详情 (供网页显示) ---- */
+  payload[17] = SvcTimer_PomoState();                         /* 0=idle 1=run 2=pause */
+  v = SvcTimer_PomoRemainSec();                               /* 剩余秒数 u16 LE */
+  payload[18] = (uint8_t)(v & 0xFFu);
+  payload[19] = (uint8_t)((v >> 8u) & 0xFFu);
+  payload[20] = (uint8_t)((st->pomofen != 0u) ? 1u : 0u);     /* 番茄钟使能 */
+  payload[21] = (uint8_t)st->alarm_hour;                      /* 闹钟时 */
+  payload[22] = (uint8_t)st->alarm_min;                       /* 闹钟分 */
+
+  BspUartLink_SendFrame(CMD_DEV_STATUS, payload, 23u);
 }
 
 int SvcLink_TriggerCalibration(void)

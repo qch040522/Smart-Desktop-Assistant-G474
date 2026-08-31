@@ -13,8 +13,7 @@
 #include "bsp_fan.h"
 #include "bsp_ws2812.h"
 
-static ctrl_mode_t s_page_mode;      /* 当前页面: 自动监测页(CTRL_MODE_AUTO)/手动控制页(CTRL_MODE_MANUAL) */
-static uint8_t     s_fan_auto;       /* 手动页风扇"自动挡"标志 */
+static uint8_t     s_fan_auto;       /* 手动模式风扇"自动挡"标志 */
 static uint8_t     s_lamp_auto;      /* 手动页台灯"自动挡"标志 */
 static uint8_t     s_fan_level;      /* 手动档 0..FAN_LEVELS-1 */
 static uint16_t    s_lamp_bright;
@@ -46,7 +45,6 @@ static uint16_t lux_to_bright(uint16_t lux)
 
 void SvcEnv_Init(app_config_t *cfg)
 {
-  s_page_mode   = (ctrl_mode_t)cfg->ctrl_mode;
   s_fan_level   = 0u;   /* 启动时风扇从"关"开始: 避免上电即恢复高速档, 在弱电源下触发复位循环 */
   s_lamp_bright = (uint16_t)(cfg->lamp_brightness > LAMP_PWM_MAX ? LAMP_PWM_MAX : cfg->lamp_brightness);
   s_fan_auto    = 0u;
@@ -118,14 +116,7 @@ void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg,
 {
   (void)cfg;
 
-  if (mode == SYS_MODE_SLEEP)      /* 手动切入休眠: 强制关闭 */
-  {
-    apply_fan(0u);
-    apply_lamp(0u);
-    return;
-  }
-
-  if (s_page_mode == CTRL_MODE_AUTO)  /* 自动监测页: 需有人且达到阈值才开 */
+  if (mode == SYS_MODE_AUTO)  /* 自动: 需有人且达到阈值才开风扇/灯 */
   {
     uint8_t  f = 0u;
     uint16_t l = 0u;
@@ -140,7 +131,7 @@ void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg,
     return;
   }
 
-  /* 手动控制页: 各设备按"自动挡/手动挡"独立控制, 不看摄像头 */
+  /* 手动模式: 各设备按"自动挡/手动挡"独立控制, 不看摄像头 */
   if ((s_fan_auto != 0u) && (sen != NULL))
   {
     uint8_t lvl = map_temp_to_level(sen->temp_x10);
@@ -163,7 +154,6 @@ void SvcEnv_Update(const sensor_data_t *sen, sys_mode_t mode, app_config_t *cfg,
 
 uint8_t SvcEnv_FanLevel(void)      { return s_fan_level; }
 uint16_t SvcEnv_LampBrightness(void){ return s_lamp_bright; }
-ctrl_mode_t SvcEnv_CtrlMode(void)  { return s_page_mode; }
 
 void SvcEnv_SetFanManual(uint8_t level)
 {
@@ -190,14 +180,5 @@ void SvcEnv_SetLampManual(uint8_t bright)
 
 void SvcEnv_SetLampAuto(void)
 {
-  s_lamp_auto = 1u;                /* 手动页台灯自动挡 */
-}
-
-void SvcEnv_SetCtrlMode(ctrl_mode_t m)
-{
-  /* 0x02 页面切换: 只改页面模式, 不影响手动页各设备自动挡 */
-  if ((m == CTRL_MODE_AUTO) || (m == CTRL_MODE_MANUAL))
-  {
-    s_page_mode = m;
-  }
+  s_lamp_auto = 1u;                /* 手动模式台灯自动挡 */
 }

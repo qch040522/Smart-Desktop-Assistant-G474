@@ -26,7 +26,7 @@ void SvcPosture_Init(int16_t base_angle_x10);
  *   - 依据 current head/pitch/occupy 判定是否触发告警(内部按 now 累积 1.5s)
  *  返回 1=刚触发了一次新告警(供 LED/UI闪烁), 0=未触发。
  */
-uint8_t SvcPosture_OnAiFrame(const ai_frame_t *f, sys_mode_t mode,
+uint8_t SvcPosture_OnAiFrame(const ai_frame_t *f, study_mode_t study,
                              uint8_t threshold_deg, int16_t base_angle_x10,
                              uint32_t now_ms);
 

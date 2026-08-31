@@ -15,7 +15,7 @@ extern "C" {
 void SvcTimer_Init(const app_timing_snapshot_t *snap);
 
 /** 每秒周期处理（驱动计时与闹钟判断） */
-void SvcTimer_Tick(sys_mode_t mode, uint32_t now_ms);
+void SvcTimer_Tick(study_mode_t study, uint32_t now_ms);
 
 /* ---- 学习时长 ---- */
 uint32_t SvcTimer_CurSec(void);

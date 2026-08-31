@@ -21,8 +21,8 @@ void SvcConfig_SetDefaults(app_config_t *cfg)
 
   cfg->magic           = FLASH_CFG_MAGIC;
   cfg->version         = 1u;
-  cfg->sys_mode        = SYS_MODE_LEISURE;
-  cfg->ctrl_mode       = CTRL_MODE_AUTO;
+  cfg->sys_mode        = SYS_MODE_AUTO;      /* 上电默认自动模式 */
+  cfg->study_mode      = STUDY_MODE_LEISURE; /* 上电默认休闲子状态 */
   cfg->angle_base      = (int16_t)POSTURE_BASE_ANGLE_DEFAULT;
   cfg->angle_threshold = POSTURE_TH_LVL_DEFAULT;
   cfg->alarm_hour      = 0u;                   /* 默认 0:00 */
@@ -43,7 +43,7 @@ static int cfg_fields_valid(const app_config_t *cfg)
 {
   if (cfg == NULL) return 0;
   if (cfg->sys_mode >= SYS_MODE_NUM)            return 0;
-  if (cfg->ctrl_mode > CTRL_MODE_MANUAL)        return 0;
+  if (cfg->study_mode >= STUDY_MODE_NUM)        return 0;
   if (cfg->fan_level >= FAN_LEVELS)             return 0;
   if (cfg->lamp_brightness > LAMP_PWM_MAX)      return 0;
   if (cfg->alarm_repeat > ALARM_REPEAT_WEEKLY)  return 0;
