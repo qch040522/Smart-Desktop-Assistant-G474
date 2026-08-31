@@ -31,6 +31,9 @@ typedef struct {
 static link_parser_t   s_p;
 static bsp_link_rx_cb_t s_cb;
 
+/* ESP32 链路已接收字节计数(调试用, 验证 RX 方向是否收到数据) */
+volatile uint32_t g_uart3_rx_cnt = 0u;
+
 /* ---------------------------------------------------------------- */
 /* 字节级 CRC16-CCITT 增量更新 */
 static void crc_byte(uint16_t *crc, uint8_t byte)
@@ -67,11 +70,16 @@ void BspUartLink_Init(bsp_link_rx_cb_t cb)
 {
   s_cb = cb;
   parser_reset();
+  /* 挂起首个 USART3 单字节接收(使能 RXNE 中断)。
+   * 缺失该调用会导致 RXNEIE 未使能、ESP32 帧字节无法读取(ORRE 溢出)。
+   * 之后每次接收完成由 HAL_UART_RxCpltCallback 自动重新挂起。 */
+  HAL_UART_Receive_IT(&huart3, (uint8_t *)&g_u3_rx_byte, 1u);
 }
 
 /* ---------------------------------------------------------------- */
 void BspUartLink_RxByte(uint8_t byte)
 {
+  g_uart3_rx_cnt++;          /* 每收一个字节计数(调试) */
   switch (s_p.state)
   {
     case ST_SYNC1:
@@ -197,7 +205,10 @@ void BspUartLink_SendFrame(uint8_t cmd, const uint8_t *payload, uint16_t len)
 }
 
 /* ---------------------------------------------------------------- */
-void BspUartLink_SendAck(uint8_t acked_cmd)
+void BspUartLink_SendAck(uint8_t acked_cmd, uint8_t status)
 {
-  BspUartLink_SendFrame(CMD_ACK_MASK | acked_cmd, NULL, 0u);
+  uint8_t payload[2];
+  payload[0] = acked_cmd;   /* 被应答的 CMD 码 */
+  payload[1] = status;      /* 0=成功 1=失败 2=忙 3=参数错误 4=不支持 */
+  BspUartLink_SendFrame(CMD_ACK, payload, 2u);
 }

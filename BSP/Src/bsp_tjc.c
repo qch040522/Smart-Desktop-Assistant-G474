@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include "cmsis_os2.h"
 #include "bsp.h"
 #include "bsp_tjc.h"
 #include "bsp_uart_link.h"     /* 复用 BspUartLink_Crc16 */
@@ -138,10 +139,76 @@ void BspTjc_RxByte(uint8_t byte)
   }
 }
 
-/* ==================== 发送 ==================== */
+/* ==================== 非阻塞发送(中断 + 环形队列) ====================
+ * 原阻塞 HAL_UART_Transmit 超时 200ms/条, UI 每秒推多条时可能拖过秒边界
+ * 导致 RTC 显示跳秒。改为 HAL_UART_Transmit_IT + 环形队列:
+ *   - 调用方(任务)只入队立即返回, 不阻塞;
+ *   - UART5 TXE 中断逐条发送, HAL_UART_TxCpltCallback 自动续发下一条。 */
+#define TJC_TX_QUEUE      8u
+#define TJC_TX_MAXLEN     100u
+
+typedef struct {
+  uint8_t  data[TJC_TX_MAXLEN];
+  uint16_t len;
+} tjc_tx_item_t;
+
+static tjc_tx_item_t    s_tx_q[TJC_TX_QUEUE];
+static volatile uint8_t s_tx_head = 0u;   /* 队头(发送中/待发送) */
+static volatile uint8_t s_tx_tail = 0u;   /* 队尾(写入点) */
+static volatile uint8_t s_tx_busy = 0u;   /* 正在 IT 发送 */
+
+/* 取队头启动 IT 发送(任务/中断均可调用) */
+static void tjc_tx_start_next(void)
+{
+  if (s_tx_head == s_tx_tail)
+  {
+    s_tx_busy = 0u;                       /* 队列空 */
+    return;
+  }
+  if (HAL_UART_Transmit_IT(&huart5, s_tx_q[s_tx_head].data,
+                           s_tx_q[s_tx_head].len) == HAL_OK)
+  {
+    s_tx_busy = 1u;
+  }
+  else
+  {
+    /* 启动失败(极少): 丢弃该条, 继续下一条 */
+    s_tx_head = (uint8_t)((s_tx_head + 1u) % TJC_TX_QUEUE);
+    tjc_tx_start_next();
+  }
+}
+
 static void tjc_send_bytes(const uint8_t *data, uint16_t len)
 {
-  HAL_UART_Transmit(&huart5, (uint8_t *)data, len, TJC_TX_TIMEOUT_MS);
+  uint8_t next;
+  if ((data == NULL) || (len == 0u) || (len > TJC_TX_MAXLEN)) return;
+
+  /* 队列满: 等待空位(正常每秒仅几条, 不会满; 极端情况短暂等待) */
+  next = (uint8_t)((s_tx_tail + 1u) % TJC_TX_QUEUE);
+  while (next == s_tx_head)
+  {
+    osDelay(1u);
+    next = (uint8_t)((s_tx_tail + 1u) % TJC_TX_QUEUE);
+  }
+
+  memcpy(s_tx_q[s_tx_tail].data, data, len);
+  s_tx_q[s_tx_tail].len = len;
+  s_tx_tail = next;
+
+  if (!s_tx_busy)
+  {
+    tjc_tx_start_next();
+  }
+}
+
+/* 发送完成回调入口(UART5 TxCplt, 中断上下文): 弹出队头并续发 */
+void BspTjc_TxComplete(void)
+{
+  if (s_tx_head != s_tx_tail)
+  {
+    s_tx_head = (uint8_t)((s_tx_head + 1u) % TJC_TX_QUEUE);
+  }
+  tjc_tx_start_next();
 }
 
 void BspTjc_SendRaw(const char *cmd)

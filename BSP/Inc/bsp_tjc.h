@@ -41,6 +41,9 @@ extern volatile uint16_t g_u5_dbg_idx;    /* 环形缓冲写入位置 */
 /** UART5 收到字节时喂入解析器（在中断/空闲中调用） */
 void BspTjc_RxByte(uint8_t byte);
 
+/** UART5 TX 发送完成回调入口(中断上下文, 由 HAL_UART_TxCpltCallback 调用, 续发队列下一条) */
+void BspTjc_TxComplete(void);
+
 /** 发送原始字符串指令（自动追加 3×0xFF 帧尾） */
 void BspTjc_SendRaw(const char *cmd);
 

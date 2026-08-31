@@ -25,9 +25,73 @@ volatile uint8_t g_frame_valid = 0u;
 /* UI 刷新脏标志 */
 static uint8_t g_ui_dirty = 1u;
 
-/* OLED 通知行（告警/校准等临时提示） */
-static char     s_notice[21] = "";
-static uint32_t s_notice_until = 0u;
+/* ==================== 告警状态机 ====================
+ * 告警为"置位/清除"持久状态(非临时文本), OLED 第6行与 TJC talert 同步显示:
+ *   POSTURE!     - 坐姿告警, 坐姿恢复正常后清除
+ *   NEED RECALIB - 需重新校准, 校准完成后清除
+ *   ALARM!       - 响铃, 响铃被关/自动停止后清除
+ * 多个告警按发生先后入栈(最新在最前), 后发生覆盖先前;
+ * 最新告警被处理后显示前一个, 全部清除后显示 NORMAL。
+ * 注: 校准完成/星期非法/链路状态(LINK OK/DOWN)不再作为告警显示。 */
+#define ALERT_POSTURE   0x01u
+#define ALERT_RECALIB   0x02u
+#define ALERT_RING      0x04u
+
+static uint8_t s_alert_stack[3];   /* 活动告警栈, [0]=最新 */
+static uint8_t s_alert_cnt = 0u;
+
+static void alert_set(uint8_t flag)
+{
+  uint8_t i;
+  for (i = 0u; i < s_alert_cnt; i++)
+  {
+    if (s_alert_stack[i] == flag)
+    {
+      for (; i > 0u; i--) s_alert_stack[i] = s_alert_stack[i - 1u];
+      s_alert_stack[0] = flag;              /* 已存在: 刷新为最新 */
+      return;
+    }
+  }
+  for (i = s_alert_cnt; i > 0u; i--) s_alert_stack[i] = s_alert_stack[i - 1u];
+  s_alert_stack[0] = flag;                  /* 新告警入栈顶(最新) */
+  if (s_alert_cnt < 3u) s_alert_cnt++;
+}
+
+static void alert_clear(uint8_t flag)
+{
+  uint8_t i, j;
+  for (i = 0u; i < s_alert_cnt; i++)
+  {
+    if (s_alert_stack[i] == flag)
+    {
+      for (j = i; (j + 1u) < s_alert_cnt; j++) s_alert_stack[j] = s_alert_stack[j + 1u];
+      s_alert_cnt--;
+      break;
+    }
+  }
+}
+
+static const char *alert_text(uint8_t flag)
+{
+  switch (flag)
+  {
+    case ALERT_POSTURE: return "POSTURE!";
+    case ALERT_RECALIB: return "NEED RECALIB";
+    case ALERT_RING:    return "ALARM!";
+    default:            return "";
+  }
+}
+
+/* ==================== TJC 推送去重缓存 ====================
+ * BspTjc_SetText 已改为非阻塞(中断+队列), 但去重可进一步减少无效推送。 */
+#define TJC_CACHE_SLOTS 11u
+enum {
+  TJC_SLOT_POMO = 0, TJC_SLOT_POMO_MAN, TJC_SLOT_TODAY, TJC_SLOT_TOTAL,
+  TJC_SLOT_ALARM, TJC_SLOT_ALARM_MAN, TJC_SLOT_REP, TJC_SLOT_REP_MAN,
+  TJC_SLOT_ST, TJC_SLOT_ST_MAN, TJC_SLOT_ALERT
+};
+static char    s_tjc_cache[TJC_CACHE_SLOTS][24];
+static uint8_t s_tjc_dirty[TJC_CACHE_SLOTS];
 
 volatile uint32_t g_ui_dbg_time = 0u;   /* 调试: UI 最近读到的 RTC 时间 (h<<16|m<<8|s) */
 
@@ -84,6 +148,49 @@ static const char *tjc_alarm_rep_txt(void)
   }
 }
 
+/* 推送去重: 仅值变化时发送(首次必发) */
+static void tjc_push(uint8_t slot, const char *obj, const char *txt)
+{
+  if ((slot < TJC_CACHE_SLOTS) &&
+      (s_tjc_dirty[slot] || (strcmp(s_tjc_cache[slot], txt) != 0)))
+  {
+    (void)strncpy(s_tjc_cache[slot], txt, sizeof(s_tjc_cache[slot]) - 1u);
+    s_tjc_cache[slot][sizeof(s_tjc_cache[slot]) - 1u] = '\0';
+    s_tjc_dirty[slot] = 0u;
+    BspTjc_SetText(obj, txt);
+  }
+}
+
+/* 更新 OLED 第6行 + TJC talert(告警闪烁 / NORMAL)。供主刷新与 500ms 闪烁刷新共用。
+ * 自动清除: 坐姿恢复正常 / 响铃被关或自动停止; 校准完成在事件中清除 RECALIB。 */
+static void update_alert_line(void)
+{
+  const char *alert_line = "";
+
+  if (SvcPosture_AlarmActive() == 0u) alert_clear(ALERT_POSTURE);
+  if (SvcTimer_AlarmRinging() == 0u)  alert_clear(ALERT_RING);
+
+  if (s_alert_cnt > 0u)
+  {
+    alert_line = alert_text(s_alert_stack[0]);          /* 最新告警 */
+    if ((BSP_GetTick() / 500u) & 1u)                    /* 持续闪烁: 500ms 亮/灭 */
+    {
+      BspOled_Puts(6u, 0u, alert_line);
+      tjc_push(TJC_SLOT_ALERT, TJC_OBJ_ALERT, alert_line);
+    }
+    else
+    {
+      BspOled_Puts(6u, 0u, " ");
+      tjc_push(TJC_SLOT_ALERT, TJC_OBJ_ALERT, " ");
+    }
+  }
+  else
+  {
+    BspOled_Puts(6u, 0u, "NORMAL");
+    tjc_push(TJC_SLOT_ALERT, TJC_OBJ_ALERT, "NORMAL");
+  }
+}
+
 /* ================================================================ */
 /*  TJC 触摸事件 -> 统一命令                                          */
 /* ================================================================ */
@@ -132,6 +239,7 @@ void App_UiInit(void)
 {
   BspTjc_Init(on_tjc_event);
   /* BspOled_Display 移到 initTask(调度器启动后执行) */
+  (void)memset(s_tjc_dirty, 1u, sizeof(s_tjc_dirty));   /* 首次必发 */
   g_ui_dirty = 1u;
 }
 
@@ -220,7 +328,9 @@ void App_TaskPosture(void *arg)
     if (osMessageQueueGet(qAI, &f, NULL, 0u) == osOK)
     {
       g_frame_any = 1u;
-      if (f.has_human && (f.keypoint_valid >= 4u))
+      /* keypoint_valid 为 0~3(鼻/左肩/右肩), ESP32 has_human 已含"有效点≥3且双肩有效"判定
+       * (对齐 UART_PROTOCOL.md §3.1) */
+      if (f.has_human && (f.keypoint_valid >= 3u))
       {
         g_frame_valid = 1u;
       }
@@ -257,7 +367,8 @@ void App_TaskPosture(void *arg)
 void App_TaskUi(void *arg)
 {
   (void)arg;
-  uint32_t last_refresh = 0u;
+  uint32_t last_refresh     = 0u;
+  uint32_t last_alert_flash = 0u;
 
   for (;;)
   {
@@ -273,42 +384,29 @@ void App_TaskUi(void *arg)
           /* 模式变化: 由 OLED 状态行/屏幕告警体现, 屏幕不单独显示 */
           break;
         case UE_POSTURE_ALARM:
-          (void)snprintf(s_notice, sizeof(s_notice), "POSTURE!");
-          s_notice_until = BSP_GetTick() + 3000u;
-          BspTjc_SetText(TJC_OBJ_ALERT, "POSTURE!");
+          alert_set(ALERT_POSTURE);
           break;
         case UE_RECALIB_NEEDED:
-          (void)snprintf(s_notice, sizeof(s_notice), "NEED RECALIB");
-          s_notice_until = BSP_GetTick() + 5000u;
-          BspTjc_SetText(TJC_OBJ_ALERT, "NEED RECALIB");
+          alert_set(ALERT_RECALIB);
           BspLed_On();   /* MPU6050 挪动需校准: LED 常亮提示 */
           break;
         case UE_CALIB_DONE:
-          (void)snprintf(s_notice, sizeof(s_notice), "CALIB OK %d.%d", m.a / 10, m.a % 10);
-          s_notice_until = BSP_GetTick() + 5000u;
-          BspTjc_SetText(TJC_OBJ_ALERT, "CALIB OK");
+          alert_clear(ALERT_RECALIB);   /* 校准完成: 清除"需校准"告警(不显示 CALIB OK) */
           BspLed_Off();  /* 校准完成: 熄灭校准提示 LED */
           break;
         case UE_ALARM_RING:
-          (void)snprintf(s_notice, sizeof(s_notice), "ALARM!");
-          s_notice_until = BSP_GetTick() + 5000u;
-          break;
-        case UE_ALARM_WD_ERR:
-          (void)snprintf(s_notice, sizeof(s_notice), "WEEKDAY 1-7!");
-          s_notice_until = BSP_GetTick() + 3000u;
-          BspTjc_SetText(TJC_OBJ_ALERT, "WEEKDAY 1-7!");
-          break;
-        case UE_LINK_DOWN:
-          (void)snprintf(s_notice, sizeof(s_notice), "LINK DOWN");
-          s_notice_until = BSP_GetTick() + 5000u;
-          break;
-        case UE_LINK_UP:
-          (void)snprintf(s_notice, sizeof(s_notice), "LINK OK");
-          s_notice_until = BSP_GetTick() + 3000u;
+          alert_set(ALERT_RING);
           break;
         default:
           break;
       }
+    }
+
+    /* 告警行独立 500ms 刷新(闪烁), 不等 1s 主刷新 */
+    if ((BSP_GetTick() - last_alert_flash) >= 500u)
+    {
+      last_alert_flash = BSP_GetTick();
+      update_alert_line();
     }
 
     if (g_ui_dirty || ((BSP_GetTick() - last_refresh) >= 1000u))
@@ -344,19 +442,8 @@ void App_TaskUi(void *arg)
       (void)snprintf(line, sizeof(line), "Lux %d", (int)g_sensor.lux);
       BspOled_Puts(5u, 0u, line);
 
-      /* 单行状态/通知: 平时常驻链路状态, 有告警时临时显示告警 */
-      if (BSP_GetTick() < s_notice_until)
-      {
-        BspOled_Puts(6u, 0u, s_notice);
-      }
-      else if (SvcState_Link() == LINK_DOWN)
-      {
-        BspOled_Puts(6u, 0u, "LINK DOWN");
-      }
-      else
-      {
-        BspOled_Puts(6u, 0u, "LINK OK");
-      }
+      /* 单行状态/通知: 常驻 NORMAL / 告警(闪烁) */
+      update_alert_line();
 
       BspOled_Flush();
 
@@ -365,14 +452,14 @@ void App_TaskUi(void *arg)
         char tbuf[24];
 
         tjc_hms(tbuf, sizeof(tbuf), SvcTimer_PomoRemainSec());
-        BspTjc_SetText(TJC_OBJ_POMO, tbuf);      /* 自动页显示番茄钟 */
-        BspTjc_SetText(TJC_OBJ_POMO_MAN, tbuf);   /* 手动页同步显示番茄钟 */
+        tjc_push(TJC_SLOT_POMO, TJC_OBJ_POMO, tbuf);      /* 自动页显示番茄钟 */
+        tjc_push(TJC_SLOT_POMO_MAN, TJC_OBJ_POMO_MAN, tbuf); /* 手动页同步显示番茄钟 */
 
         tjc_hms(tbuf, sizeof(tbuf), SvcTimer_TodaySec());
-        BspTjc_SetText(TJC_OBJ_TODAY, tbuf);
+        tjc_push(TJC_SLOT_TODAY, TJC_OBJ_TODAY, tbuf);
 
         tjc_hms(tbuf, sizeof(tbuf), SvcTimer_TotalSec());
-        BspTjc_SetText(TJC_OBJ_TOTAL, tbuf);
+        tjc_push(TJC_SLOT_TOTAL, TJC_OBJ_TOTAL, tbuf);
 
         /* 闹钟时间: 未设置(0:00)/重置后显示 NULL */
         if (SvcTimer_AlarmHasSet())
@@ -384,27 +471,27 @@ void App_TaskUi(void *arg)
         {
           (void)snprintf(tbuf, sizeof(tbuf), "NULL");
         }
-        BspTjc_SetText(TJC_OBJ_ALARM, tbuf);
-        BspTjc_SetText(TJC_OBJ_ALARM_MAN, tbuf);
+        tjc_push(TJC_SLOT_ALARM, TJC_OBJ_ALARM, tbuf);
+        tjc_push(TJC_SLOT_ALARM_MAN, TJC_OBJ_ALARM_MAN, tbuf);
         if (!SvcTimer_AlarmHasSet())
         {
-          BspTjc_SetText(TJC_OBJ_ALARM_REP, "NULL");   /* 未设置闹钟: NULL */
-          BspTjc_SetText(TJC_OBJ_ALARM_REP_MAN, "NULL");
+          tjc_push(TJC_SLOT_REP, TJC_OBJ_ALARM_REP, "NULL");   /* 未设置闹钟: NULL */
+          tjc_push(TJC_SLOT_REP_MAN, TJC_OBJ_ALARM_REP_MAN, "NULL");
         }
         else if ((SvcTimer_AlarmRepeat() == ALARM_REPEAT_WEEKLY) && SvcTimer_AlarmWeekdayErr())
         {
-          BspTjc_SetText(TJC_OBJ_ALARM_REP, "ERR");      /* 每周且星期非法: 保持 ERR */
-          BspTjc_SetText(TJC_OBJ_ALARM_REP_MAN, "ERR");
+          tjc_push(TJC_SLOT_REP, TJC_OBJ_ALARM_REP, "ERR");      /* 每周且星期非法: 保持 ERR */
+          tjc_push(TJC_SLOT_REP_MAN, TJC_OBJ_ALARM_REP_MAN, "ERR");
         }
         else
         {
-          BspTjc_SetText(TJC_OBJ_ALARM_REP, tjc_alarm_rep_txt());
-          BspTjc_SetText(TJC_OBJ_ALARM_REP_MAN, tjc_alarm_rep_txt());
+          tjc_push(TJC_SLOT_REP, TJC_OBJ_ALARM_REP, tjc_alarm_rep_txt());
+          tjc_push(TJC_SLOT_REP_MAN, TJC_OBJ_ALARM_REP_MAN, tjc_alarm_rep_txt());
         }
-        BspTjc_SetText(TJC_OBJ_ALARM_ST,
-                       SvcTimer_AlarmEnabled() ? "OPEN" : "CLOSE");
-        BspTjc_SetText(TJC_OBJ_ALARM_ST_MAN,
-                       SvcTimer_AlarmEnabled() ? "OPEN" : "CLOSE");
+        tjc_push(TJC_SLOT_ST, TJC_OBJ_ALARM_ST,
+                 SvcTimer_AlarmEnabled() ? "OPEN" : "CLOSE");
+        tjc_push(TJC_SLOT_ST_MAN, TJC_OBJ_ALARM_ST_MAN,
+                 SvcTimer_AlarmEnabled() ? "OPEN" : "CLOSE");
       }
     }
     osDelay(200u);

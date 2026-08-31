@@ -23,7 +23,7 @@ static sys_mode_t     s_mode;
 static occupy_state_t s_occupy;
 static link_state_t   s_link;
 static uint8_t        s_threshold_lvl;
-static uint8_t        s_unhuman_count;
+static uint32_t       s_last_valid_ms;   /* 最近一次有效帧时刻, 无人判定用时间窗口 */
 static uint8_t        s_link_count;
 
 void SvcState_Init(app_config_t *cfg)
@@ -34,7 +34,7 @@ void SvcState_Init(app_config_t *cfg)
   s_link           = LINK_OK;
   s_threshold_lvl  = cfg->angle_threshold;
   if (s_threshold_lvl >= POSTURE_TH_LVL_COUNT) s_threshold_lvl = POSTURE_TH_LVL_DEFAULT;
-  s_unhuman_count  = 0u;
+  s_last_valid_ms  = 0u;
   s_link_count     = 0u;
 }
 
@@ -47,8 +47,6 @@ static int should_sleep(sys_mode_t m)
 
 void SvcState_Tick(uint32_t now_ms, uint8_t any_frame, uint8_t valid_frame)
 {
-  (void)now_ms;
-
   /* 断链判定: 连续>=10周期无任何 0x01 帧 */
   s_link_count = any_frame ? 0u : (uint8_t)(s_link_count + 1u);
   if (s_link_count >= LINK_DOWN_FRAME_TH)
@@ -60,15 +58,16 @@ void SvcState_Tick(uint32_t now_ms, uint8_t any_frame, uint8_t valid_frame)
     if (any_frame) s_link = LINK_OK;
   }
 
-  /* 无人判定: 连续>=3周期无有效关键点帧 */
-  s_unhuman_count = valid_frame ? 0u : (uint8_t)(s_unhuman_count + 1u);
-  if (s_unhuman_count >= UNHUMAN_FRAME_TH)
+  /* 无人判定: 时间窗口。有效帧刷新"最近有效时刻";
+   * 距离最近有效帧超过 UNHUMAN_TIMEOUT_MS 才判无人(容错 ESP32 慢帧率) */
+  if (valid_frame)
+  {
+    s_last_valid_ms = now_ms;
+    s_occupy = OCCUPY_HUMAN;
+  }
+  else if ((now_ms - s_last_valid_ms) >= UNHUMAN_TIMEOUT_MS)
   {
     s_occupy = OCCUPY_NOBODY;
-  }
-  else if (valid_frame)
-  {
-    s_occupy = OCCUPY_HUMAN;
   }
 
 #if 0   /* 临时测试(串口屏调试): 禁用无人自动休眠, 便于手动控制风扇/灯 */

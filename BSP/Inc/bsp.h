@@ -34,6 +34,7 @@ void     BSP_IwdgFeed(void);           /* 喂硬件看门狗 */
 
 extern volatile uint8_t g_u3_rx_byte;   /* ESP32 接收缓存 */
 extern volatile uint8_t g_u5_rx_byte;   /* TJC 接收缓存 */
+extern volatile uint32_t g_uart3_rx_cnt; /* ESP32 链路已接收字节计数(调试: 验证 RX 方向) */
 
 /* ==================== I2C 总线扫描（调试用） ==================== */
 extern volatile uint8_t g_i2c_scan[128];    /* 各 7 位地址是否有设备响应 */

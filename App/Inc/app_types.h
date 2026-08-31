@@ -45,10 +45,10 @@ typedef enum {
 
 /** AI 状态帧（ESP32 0x01, 需求 §10.1） */
 typedef struct {
-  uint8_t   has_human;      /* 有人(上半身关键点达标) */
+  uint8_t   has_human;      /* 有人(上半身关键点达标: 有效点≥3且双肩有效) */
   uint8_t   head_visible;   /* 头部关键点可见 */
   int16_t   pitch_angle;    /* 头-肩下沉角, 0.1°, 低头为正签名 */
-  uint8_t   keypoint_valid; /* 上半身有效关键点计数 */
+  uint8_t   keypoint_valid; /* 上半身有效关键点计数(鼻/左肩/右肩, 0~3) */
   uint32_t  tick_ms;        /* 收帧时刻(系统运行毫秒) */
 } ai_frame_t;
 

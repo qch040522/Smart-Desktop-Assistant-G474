@@ -25,3 +25,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     HAL_UART_Receive_IT(&huart5, (uint8_t *)&g_u5_rx_byte, 1u);
   }
 }
+
+/* UART5(TJC) 发送完成: 非阻塞队列续发下一条 */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == &huart5)
+  {
+    BspTjc_TxComplete();
+  }
+}

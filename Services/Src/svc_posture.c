@@ -65,11 +65,11 @@ uint8_t SvcPosture_OnAiFrame(const ai_frame_t *f, sys_mode_t mode,
     s_have_filt = 1u;
   }
 
-  /* 条件满足? */
+  /* 条件满足? keypoint_valid 为 0~3(鼻/左肩/右肩), 对齐 UART_PROTOCOL.md §3.1 */
   uint8_t posture_en = (mode == SYS_MODE_STUDY);
   int32_t thr = (int32_t)base_angle_x10 + (int32_t)threshold_deg * 10;
   uint8_t in_bad = (posture_en && f->has_human && f->head_visible &&
-                    (f->keypoint_valid >= 4u) &&
+                    (f->keypoint_valid >= 3u) &&
                     ((int32_t)s_filt_x10 > thr)) ? 1u : 0u;
 
   if (in_bad)

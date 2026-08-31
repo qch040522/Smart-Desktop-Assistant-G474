@@ -22,7 +22,7 @@ extern "C" {
 /* --- 无人 / 断链判定 (需求 §四 / §11.1) --- */
 #define AI_REPORT_PERIOD_MS         1000u   /* ESP32 0x01 上报周期(默认1s) */
 #define AI_REPORT_PERIOD_SLEEP_MS   2500u   /* 业务休眠期上报周期 */
-#define UNHUMAN_FRAME_TH              3u    /* 连续>=3个周期无有效帧 -> 无人 */
+#define UNHUMAN_TIMEOUT_MS            15000u  /* 无有效帧超过 15s -> 无人(ESP32 实际约4~5s/帧) */
 #define LINK_DOWN_FRAME_TH            10u   /* 连续>=10个周期无任何0x01帧 -> 断链 */
 
 /* --- 坐姿告警 (需求 §五) --- */
